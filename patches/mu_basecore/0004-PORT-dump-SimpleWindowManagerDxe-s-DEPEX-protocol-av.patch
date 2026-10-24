@@ -1,0 +1,101 @@
+From 895b5ac21420c83c92d82d87d5121f5b0830114f Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Fri, 23 Oct 2026 11:08:40 +0800
+Subject: [PATCH 04/10] PORT: dump SimpleWindowManagerDxe's DEPEX protocol
+ availability
+
+FrontPage reports '[FP] FAIL no SWM', so SimpleWindowManagerDxe never published
+gMsSWMProtocolGuid. Its DEPEX has 13 entries and 12 of them are proven present -
+UsbfnDwc3Dxe requires a superset (the same 4 GPIO protocols, the same 4 text
+I/O protocols, CpuArch/MetronomeArch/TimerArch, DevicePath) and did dispatch. So
+exactly one is missing, and the prime suspect is gMsUiThemeProtocolGuid
+(fc111ae5-...), published by the MsUiThemeProtocol driver.
+
+BdsPortCheckSwmDeps() locates all 13 right before the boot manager menu is
+launched and prints 'present <name>' or 'MISSING <name>' for each. The GUIDs are
+written out literally so BdsDxe's INF needs no new [Protocols] entries.
+---
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c | 63 ++++++++++++++++++++++++
+ 1 file changed, 63 insertions(+)
+
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index 32583f1..fa969c1 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -61,6 +61,63 @@ BdsPortTrace (
+   SerialPortWrite ((UINT8 *)Buf, Len);
+ }
+ 
++//
++// PORT: dump whether each protocol in SimpleWindowManagerDxe's DEPEX actually
++// exists by the time BDS runs.
++//
++// SimpleWindowManagerDxe never dispatches, so FrontPage cannot find gMsSWM and
++// returns EFI_UNSUPPORTED. Its DEPEX has 13 entries and twelve of them are
++// proven present (UsbfnDwc3Dxe requires a superset of them and did dispatch), so
++// exactly one is missing - this prints which. The GUIDs are spelled out here
++// instead of using the g...Guid symbols so that BdsDxe's INF does not need 13
++// new [Protocols] entries.
++//
++typedef struct {
++  EFI_GUID       Guid;
++  CONST CHAR8    *Name;
++} BDS_PORT_PROBE;
++
++STATIC CONST BDS_PORT_PROBE  mBdsPortProbes[] = {
++  { { 0xfc111ae5, 0xf073, 0x4348, { 0xaa, 0x5c, 0x49, 0x12, 0x4b, 0xbf, 0xed, 0x7b } }, "MsUiTheme  " },
++  { { 0x665e3ff6, 0x46cc, 0x11d4, { 0x9a, 0x38, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } }, "SimpleTextIn" },
++  { { 0x665e3ff5, 0x46cc, 0x11d4, { 0x9a, 0x38, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } }, "SimpleTextInEx" },
++  { { 0x27cfac87, 0x46cc, 0x11d4, { 0x9a, 0x38, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } }, "SimpleTextOut" },
++  { { 0x27cfac88, 0x46cc, 0x11d4, { 0x9a, 0x38, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } }, "SimpleTextOutEx" },
++  { { 0x26baccb1, 0x6f42, 0x11d4, { 0xbc, 0xe7, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } }, "CpuArch    " },
++  { { 0x26baccb2, 0x6f42, 0x11d4, { 0xbc, 0xe7, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } }, "Metronome  " },
++  { { 0x26baccb3, 0x6f42, 0x11d4, { 0xbc, 0xe7, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } }, "TimerArch  " },
++  { { 0x1da97072, 0xbddc, 0x4b30, { 0x99, 0xf1, 0x72, 0xa0, 0xb5, 0x6f, 0xff, 0x2a } }, "Gpio       " },
++  { { 0xb7dfb4e1, 0x052f, 0x449f, { 0x87, 0xbe, 0x98, 0x18, 0xfc, 0x91, 0xb7, 0x33 } }, "GpioConfig " },
++  { { 0xa46423e3, 0x4617, 0x49f1, { 0xb9, 0xff, 0xd1, 0xbf, 0xa9, 0x11, 0x58, 0x39 } }, "GpioInt    " },
++  { { 0x6441f818, 0x6362, 0x4e44, { 0xb5, 0x70, 0x7d, 0xba, 0x31, 0xdd, 0x24, 0x53 } }, "GpioIo     " },
++  { { 0x1e5668e2, 0x8481, 0x11d4, { 0xbc, 0xf1, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } }, "DevicePath " },
++};
++
++STATIC
++VOID
++BdsPortCheckSwmDeps (
++  VOID
++  )
++{
++  CHAR8       Buf[64];
++  UINTN       Index;
++  UINTN       Len;
++  VOID        *Instance;
++
++  BdsPortTrace ("swm-deps-start", NULL, 0, EFI_SUCCESS);
++
++  for (Index = 0; Index < ARRAY_SIZE (mBdsPortProbes); Index++) {
++    Instance = NULL;
++    if (EFI_ERROR (gBS->LocateProtocol ((EFI_GUID *)&mBdsPortProbes[Index].Guid, NULL, &Instance))) {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[BDS] MISSING %a\n\r", mBdsPortProbes[Index].Name);
++    } else {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[BDS] present %a\n\r", mBdsPortProbes[Index].Name);
++    }
++
++    SerialPortWrite ((UINT8 *)Buf, Len);
++  }
++}
++
+ #define SET_BOOT_OPTION_SUPPORT_KEY_COUNT(a, c)  { \
+       (a) = ((a) & ~EFI_BOOT_OPTION_SUPPORT_COUNT) | (((c) << LowBitSet32 (EFI_BOOT_OPTION_SUPPORT_COUNT)) & EFI_BOOT_OPTION_SUPPORT_COUNT); \
+       }
+@@ -1107,6 +1164,12 @@ BdsEntry (
+     BdsPortTrace ("menu", BootManagerMenu.Description, BootManagerMenu.OptionNumber, BootManagerMenuStatus);
+   }
+ 
++  //
++  // PORT: FrontPage reported "no SWM". Find out which of SimpleWindowManagerDxe's
++  // 13 DEPEX protocols is actually missing.
++  //
++  BdsPortCheckSwmDeps ();
++
+   //
+   // PORT: ask for the firmware UI unconditionally.
+   //

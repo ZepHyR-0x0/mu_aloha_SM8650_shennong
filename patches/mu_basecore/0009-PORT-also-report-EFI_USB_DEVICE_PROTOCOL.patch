@@ -1,0 +1,48 @@
+From 0b4b754219639eae42a7811130cb1fc09da8b868 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Fri, 23 Oct 2026 14:43:40 +0800
+Subject: [PATCH 09/10] PORT: also report EFI_USB_DEVICE_PROTOCOL
+
+EFI_USBFN_IO_PROTOCOL being present only means UsbfnDwc3Dxe bound. Whether the
+peripheral controller is actually started - i.e. whether a host would see
+anything on the wire - is the job of the device-mode coordinator, so report that
+too:
+
+  [USB] UsbDevice MISSING | present 0x...
+
+No enumeration logic has been written. Starting the controller by hand would mean
+supplying a full descriptor set (device/config/qualifier/BOS/string), which is
+UsbMsdDxe's job; hand-rolling it would fight that driver rather than help.
+---
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index e95da51..6c39da1 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -157,6 +157,24 @@ BdsPortCheckUsbDeps (
+   }
+ 
+   SerialPortWrite ((UINT8 *)Buf, Len);
++
++  //
++  // And the device-mode coordinator. UsbfnIo being present only means the
++  // controller driver bound; whether the controller is actually started, and
++  // therefore whether a host would see anything on the wire, depends on this.
++  //
++  {
++    EFI_GUID  UsbDevice = { 0xd9d9ce48, 0x44b8, 0x4f49, { 0x8e, 0x3e, 0x2a, 0x3b, 0x92, 0x7d, 0xc6, 0xc1 } };
++
++    Instance = NULL;
++    if (EFI_ERROR (gBS->LocateProtocol (&UsbDevice, NULL, &Instance))) {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[USB] UsbDevice MISSING\n\r");
++    } else {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[USB] UsbDevice present 0x%p\n\r", Instance);
++    }
++
++    SerialPortWrite ((UINT8 *)Buf, Len);
++  }
+ }
+ 
+ //

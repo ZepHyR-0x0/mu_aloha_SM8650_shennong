@@ -1,0 +1,48 @@
+From 4de4da77ee82c38ac7cc0b3904e4eeefa4ee2db9 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Fri, 23 Oct 2026 14:28:46 +0800
+Subject: [PATCH 08/10] PORT: report UsbfnIo itself again, not just its
+ dependencies
+
+When the 16-item DEPEX dump replaced the single check, the one line that
+actually answered the question disappeared - the device log showed sixteen
+'[USB] present' lines and no verdict. Restore it at the end of the block:
+'[USB] UsbfnIo MISSING' or '[USB] UsbfnIo present 0x...'.
+---
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index adbdcf8..e95da51 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -101,6 +101,10 @@ STATIC CONST BDS_PORT_PROBE  mBdsPortProbes[] = {
+ // DriverBinding, PlatformInfo, a Qualcomm protocol (fa5f306b, not in any .dec)
+ // and SMEM. This prints which one is actually absent instead of guessing.
+ //
++STATIC EFI_GUID  mBdsUsbIoGuid = {
++  0x32d2963a, 0xfe5d, 0x4f30, { 0xb6, 0x33, 0x6e, 0x5d, 0xc5, 0x58, 0x03, 0xcc }
++};
++
+ STATIC CONST BDS_PORT_PROBE  mBdsUsbDeps[] = {
+   { { 0x18a031ab, 0xb443, 0x4d1a, { 0xa5, 0xc0, 0x0c, 0x09, 0x26, 0x1e, 0x9f, 0x71 } }, "DriverBinding " },
+   { { 0x157a5c45, 0x21b2, 0x43c5, { 0xba, 0x7c, 0x82, 0x2f, 0xee, 0x5f, 0xe5, 0x99 } }, "PlatformInfo  " },
+@@ -141,6 +145,18 @@ BdsPortCheckUsbDeps (
+ 
+     SerialPortWrite ((UINT8 *)Buf, Len);
+   }
++
++  //
++  // And the protocol itself, so the answer is one line rather than an inference.
++  //
++  Instance = NULL;
++  if (EFI_ERROR (gBS->LocateProtocol ((EFI_GUID *)&mBdsUsbIoGuid, NULL, &Instance))) {
++    Len = AsciiSPrint (Buf, sizeof (Buf), "[USB] UsbfnIo MISSING\n\r");
++  } else {
++    Len = AsciiSPrint (Buf, sizeof (Buf), "[USB] UsbfnIo present 0x%p\n\r", Instance);
++  }
++
++  SerialPortWrite ((UINT8 *)Buf, Len);
+ }
+ 
+ //

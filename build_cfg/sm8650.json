@@ -1,0 +1,8 @@
+{
+    "platform": "Sm8650",
+    "package": "ShennongPkg",
+    "bootshim": {
+        "UEFI_BASE": "0xA7100000",
+        "UEFI_SIZE": "0x00400000"
+    }
+}

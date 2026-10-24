@@ -1,0 +1,60 @@
+From f3dddbd0e46e85ceb0b751b041eca3362ba2194b Mon Sep 17 00:00:00 2001
+From: porter <port@local>
+Date: Wed, 21 Oct 2026 22:50:33 +0800
+Subject: [PATCH 01/10] PORT-TRACE: print FFS GUID of each driver before
+ CoreLoadImage
+
+MDEPKG_NDEBUG (defined by package DSCs for RELEASE) compiles DEBUG() out, so the
+DXE dispatcher was silent. Emit the GUID with a direct SerialPortWrite instead;
+FrameBufferSerialPortLib routes it to the phone screen. Used to identify which
+driver returns EFI_NOT_FOUND and trips the AutoGen.c:650 ASSERT.
+---
+ MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c | 28 +++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c b/MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c
+index 023af6c..d905a41 100644
+--- a/MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c
++++ b/MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c
+@@ -33,6 +33,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ **/
+ 
+ #include "DxeMain.h"
++#include <Library/SerialPortLib.h>
+ 
+ //
+ // The Driver List contains one copy of every driver that has been discovered.
+@@ -454,6 +455,33 @@ CoreDispatcher (
+       //
+       if ((DriverEntry->ImageHandle == NULL) && !DriverEntry->IsFvImage) {
+         DEBUG ((DEBUG_INFO, "Loading driver %g\n", &DriverEntry->FileName));
++        {
++          //
++          // PORT-TRACE: print the FFS GUID of every driver about to be loaded.
++          // Bypasses DEBUG()/ASSERT() which are compiled out by MDEPKG_NDEBUG
++          // in RELEASE builds. Visible on the framebuffer console via
++          // FrameBufferSerialPortLib.
++          //
++          UINT8 *GuidBytes = (UINT8 *)&DriverEntry->FileName;
++          CHAR8  TraceLine[40];
++          CHAR8  HexChars[] = "0123456789ABCDEF";
++          UINTN  TraceIndex;
++
++          TraceLine[0] = '[';
++          TraceLine[1] = 'D';
++          TraceLine[2] = 'R';
++          TraceLine[3] = 'V';
++          TraceLine[4] = ']';
++          TraceLine[5] = ' ';
++          for (TraceIndex = 0; TraceIndex < 16; TraceIndex++) {
++            TraceLine[6 + TraceIndex * 2]     = HexChars[(GuidBytes[TraceIndex] >> 4) & 0xF];
++            TraceLine[7 + TraceIndex * 2]     = HexChars[GuidBytes[TraceIndex] & 0xF];
++          }
++
++          TraceLine[38] = '\n';
++          SerialPortWrite ((UINT8 *)TraceLine, 39);
++        }
++
+         Status = CoreLoadImage (
+                    FALSE,
+                    gDxeCoreImageHandle,

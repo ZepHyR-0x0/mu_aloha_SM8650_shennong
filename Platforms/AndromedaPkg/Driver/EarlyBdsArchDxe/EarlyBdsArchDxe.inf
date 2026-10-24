@@ -1,0 +1,41 @@
+## @file
+#  EarlyBdsArchDxe - publish gEfiBdsArchProtocolGuid before BDS runs, so
+#  HALIOMMUDxe's DEPEX can be satisfied without starting the boot manager.
+#
+#  Copyright (c) 2026, ProjectMu shennong port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = EarlyBdsArchDxe
+  FILE_GUID                      = 2d7e5c14-9b3a-4f68-a05e-6c81b7d3e29f
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = EarlyBdsArchEntry
+
+[Sources]
+  EarlyBdsArchDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  BaseLib
+  SerialPortLib
+  DebugLib
+
+[Protocols]
+  gEfiBdsArchProtocolGuid
+
+[Depex]
+  #
+  # Everything HALIOMMU needs except BdsArch itself.
+  #
+  gEfiCpuArchProtocolGuid AND
+  gEfiMetronomeArchProtocolGuid AND
+  gEfiTimerArchProtocolGuid

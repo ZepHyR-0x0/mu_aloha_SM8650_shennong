@@ -1,0 +1,26 @@
+# ****************************************************************************
+# EnvDxeEnhanced - binary INF
+#
+# Payload: EnvDxeEnhanced.efi (73728 bytes), taken from the phone's own
+# uefi_a partition (extract/uefi_extract/EnvDxeEnhanced.efi). This is the
+# shennong build, so its PCD defaults are the ones this platform expects -
+# unlike the Denali copy, which crashes here because it resolves
+# PcdEDLCookieAddr to zero (FAR 0x28, null dereference).
+#
+# Same FILE_GUID as EnvDxe, so this is a drop-in slot replacement.
+# ****************************************************************************
+
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = EnvDxeEnhanced
+  FILE_GUID      = 90A49AFD-422F-08AE-9611-E788D3804845
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = EfiEntry
+
+[Binaries.AARCH64]
+  DXE_DEPEX|EnvDxeEnhanced.depex|*
+  PE32|EnvDxeEnhanced.efi|*
+
+[Depex]
+  TRUE

@@ -1,0 +1,110 @@
+From 368e7f21ae4bc33b16b201db9655ac35db3a2344 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Sat, 24 Oct 2026 18:10:27 +0800
+Subject: [PATCH 3/3] DisplayEngine: map a volume-key double tap to
+ SCAN_LEFT/SCAN_RIGHT
+
+The phone has only volume up and volume down, so a form with more than one page of
+options cannot be navigated at all. A quick second press of the same volume key is
+translated to a horizontal scan code; the first press is left alone because the keypad
+driver notifies on press only - there is no release event - so it has already moved the
+highlight by the time the second one arrives.
+
+Window is 400 ms, TimerLib added to the INF for the timestamp.
+---
+ .../DisplayEngineDxe/DisplayEngineDxe.inf     |  1 +
+ MsGraphicsPkg/DisplayEngineDxe/FormDisplay.c  | 55 +++++++++++++++++++
+ 2 files changed, 56 insertions(+)
+
+diff --git a/MsGraphicsPkg/DisplayEngineDxe/DisplayEngineDxe.inf b/MsGraphicsPkg/DisplayEngineDxe/DisplayEngineDxe.inf
+index 132cf52..877064d 100644
+--- a/MsGraphicsPkg/DisplayEngineDxe/DisplayEngineDxe.inf
++++ b/MsGraphicsPkg/DisplayEngineDxe/DisplayEngineDxe.inf
+@@ -48,6 +48,7 @@
+   MsUiThemeLib
+   MsColorTableLib
+   SwmDialogsLib
++  TimerLib
+ 
+ [Protocols]
+   gEdkiiFormDisplayEngineProtocolGuid   ## PRODUCES
+diff --git a/MsGraphicsPkg/DisplayEngineDxe/FormDisplay.c b/MsGraphicsPkg/DisplayEngineDxe/FormDisplay.c
+index 2247ac5..afbb8f2 100644
+--- a/MsGraphicsPkg/DisplayEngineDxe/FormDisplay.c
++++ b/MsGraphicsPkg/DisplayEngineDxe/FormDisplay.c
+@@ -20,6 +20,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include "FormDisplay.h"
+ 
+ #include <Library/BmpSupportLib.h>
++#include <Library/TimerLib.h>
+ 
+ // Protocols.
+ //
+@@ -76,6 +77,56 @@ SCAN_CODE_TO_SCREEN_OPERATION  gScanCodeToOperation[] = {
+ 
+ UINTN  mScanCodeNumber = ARRAY_SIZE (gScanCodeToOperation);
+ 
++//
++// The phone only has volume up/down, so a quick double tap on them is mapped
++// to SCAN_RIGHT/SCAN_LEFT. Only the second press is translated: the keypad
++// driver notifies on press only (SimpleTextInEx has no release event), so the
++// first press has already moved the highlight when the second one arrives.
++//
++#define VOLUME_DOUBLE_TAP_NS  (400ULL * 1000ULL * 1000ULL)
++
++STATIC UINT64   mLastVolumeUpNs;
++STATIC UINT64   mLastVolumeDownNs;
++STATIC BOOLEAN  mVolumeUpPending;
++STATIC BOOLEAN  mVolumeDownPending;
++
++STATIC
++VOID
++TranslateVolumeDoubleTap (
++  IN OUT EFI_INPUT_KEY  *Key
++  )
++{
++  UINT64   NowNs;
++  UINT64   *LastNs;
++  BOOLEAN  *Pending;
++  UINT16   MappedScanCode;
++
++  switch (Key->ScanCode) {
++    case SCAN_UP:
++      LastNs         = &mLastVolumeUpNs;
++      Pending        = &mVolumeUpPending;
++      MappedScanCode = SCAN_RIGHT;
++      break;
++    case SCAN_DOWN:
++      LastNs         = &mLastVolumeDownNs;
++      Pending        = &mVolumeDownPending;
++      MappedScanCode = SCAN_LEFT;
++      break;
++    default:
++      return;
++  }
++
++  NowNs = GetTimeInNanoSecond (GetPerformanceCounter ());
++  if (*Pending && ((NowNs - *LastNs) <= VOLUME_DOUBLE_TAP_NS)) {
++    *Pending         = FALSE;
++    Key->ScanCode    = MappedScanCode;
++    Key->UnicodeChar = CHAR_NULL;
++  } else {
++    *Pending = TRUE;
++    *LastNs  = NowNs;
++  }
++}
++
+ SCREEN_OPERATION_T0_CONTROL_FLAG  gScreenOperationToControlFlag[] = {
+   {
+     UiNoOperation,
+@@ -2142,6 +2193,10 @@ UiDisplayMenu (
+                                       mSimpleTextInEx,
+                                       &InputState.State.KeyState
+                                       );
++          if (!EFI_ERROR (Status)) {
++            TranslateVolumeDoubleTap (&InputState.State.KeyState.Key);
++          }
++
+           break;
+         }
+         case UIEventTouch:          // Touch/mouse event.

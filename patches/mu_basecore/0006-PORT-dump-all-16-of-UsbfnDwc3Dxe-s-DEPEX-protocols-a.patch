@@ -1,0 +1,136 @@
+From d11505cd139fb7e137457e60c685b38e8a903d36 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Fri, 23 Oct 2026 13:07:40 +0800
+Subject: [PATCH 06/10] PORT: dump all 16 of UsbfnDwc3Dxe's DEPEX protocols,
+ and hold the screen
+
+EFI_USBFN_IO_PROTOCOL is absent, so UsbfnDwc3Dxe never dispatched. Its DEPEX has
+16 entries and NOT ONE of them is a GPIO protocol - the twelve architectural
+protocols, DriverBinding, PlatformInfo, a Qualcomm protocol (fa5f306b, present in
+no .dec) and SMEM. So 'GPIO is not up' cannot be the reason it fails to
+dispatch, even though it may well block it later at runtime.
+
+BdsPortCheckUsbDeps() locates all 16 and prints '[USB] present <name>' or
+'[USB] MISSING <name>', which narrows the cause to one line instead of a guess.
+
+BdsPortHoldScreen() stalls for 6 s before BDS launches FrontPage. FrontPage
+paints the entire framebuffer, so every probe printed before it is covered the
+moment it starts - that is why the last several rounds produced nothing readable.
+---
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c | 79 +++++++++++++++++++-----
+ 1 file changed, 62 insertions(+), 17 deletions(-)
+
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index 809b5b1..cc2d96f 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -94,32 +94,71 @@ STATIC CONST BDS_PORT_PROBE  mBdsPortProbes[] = {
+ };
+ 
+ //
+-// PORT: report whether the USB device stack actually came up.
++// PORT: report every protocol UsbfnDwc3Dxe DEPEXes on.
+ //
+-// With gEfiResetArchProtocolGuid and gEfiSecurityArchProtocolGuid finally being
+-// published, GpiDxe / HALIOMMU / UsbfnDwc3Dxe - which all DEPEX on the full
+-// architectural set - should dispatch for the first time. EFI_USBFN_IO_PROTOCOL
+-// existing is the direct evidence that they did.
++// EFI_USBFN_IO_PROTOCOL is missing, so UsbfnDwc3Dxe never dispatched. Its DEPEX
++// has 16 entries and none of them is a GPIO protocol - the architectural set,
++// DriverBinding, PlatformInfo, a Qualcomm protocol (fa5f306b, not in any .dec)
++// and SMEM. This prints which one is actually absent instead of guessing.
+ //
++STATIC CONST BDS_PORT_PROBE  mBdsUsbDeps[] = {
++  { { 0x18a031ab, 0xb443, 0x4d1a, { 0xa5, 0xc0, 0x0c, 0x09, 0x26, 0x1e, 0x9f, 0x71 } }, "DriverBinding " },
++  { { 0x157a5c45, 0x21b2, 0x43c5, { 0xba, 0x7c, 0x82, 0x2f, 0xee, 0x5f, 0xe5, 0x99 } }, "PlatformInfo  " },
++  { { 0x665e3ff6, 0x46cc, 0x11d4, { 0x9a, 0x38, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } }, "BdsArch       " },
++  { { 0x26baccb1, 0x6f42, 0x11d4, { 0xbc, 0xe7, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } }, "CpuArch       " },
++  { { 0x26baccb2, 0x6f42, 0x11d4, { 0xbc, 0xe7, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } }, "MetronomeArch " },
++  { { 0x1da97072, 0xbddc, 0x4b30, { 0x99, 0xf1, 0x72, 0xa0, 0xb5, 0x6f, 0xff, 0x2a } }, "MonotonicCnt  " },
++  { { 0x27cfac87, 0x46cc, 0x11d4, { 0x9a, 0x38, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } }, "RtcArch       " },
++  { { 0x27cfac88, 0x46cc, 0x11d4, { 0x9a, 0x38, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } }, "ResetArch     " },
++  { { 0xb7dfb4e1, 0x052f, 0x449f, { 0x87, 0xbe, 0x98, 0x18, 0xfc, 0x91, 0xb7, 0x33 } }, "RuntimeArch   " },
++  { { 0xa46423e3, 0x4617, 0x49f1, { 0xb9, 0xff, 0xd1, 0xbf, 0xa9, 0x11, 0x58, 0x39 } }, "SecurityArch  " },
++  { { 0x26baccb3, 0x6f42, 0x11d4, { 0xbc, 0xe7, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } }, "TimerArch     " },
++  { { 0x6441f818, 0x6362, 0x4e44, { 0xb5, 0x70, 0x7d, 0xba, 0x31, 0xdd, 0x24, 0x53 } }, "VarWriteArch  " },
++  { { 0x1e5668e2, 0x8481, 0x11d4, { 0xbc, 0xf1, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } }, "VariableArch  " },
++  { { 0x665e3ff5, 0x46cc, 0x11d4, { 0x9a, 0x38, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } }, "WatchdogArch  " },
++  { { 0xfa5f306b, 0xf47d, 0x4ac4, { 0xa4, 0x7d, 0x88, 0x2f, 0x82, 0x04, 0xec, 0x30 } }, "QcomPmic?     " },
++  { { 0xf4e5c7d0, 0xd239, 0x47cb, { 0xaa, 0xcd, 0x7f, 0x66, 0xef, 0x76, 0x32, 0x38 } }, "SMEM          " },
++};
++
+ STATIC
+ VOID
+-BdsPortCheckUsb (
++BdsPortCheckUsbDeps (
+   VOID
+   )
+ {
+-  EFI_GUID    UsbfnIo = { 0x32d2963a, 0xfe5d, 0x4f30, { 0xb6, 0x33, 0x6e, 0x5d, 0xc5, 0x58, 0x03, 0xcc } };
+-  CHAR8       Buf[64];
+-  UINTN       Len;
+-  VOID        *Instance;
++  CHAR8  Buf[64];
++  UINTN  Index;
++  UINTN  Len;
++  VOID   *Instance;
+ 
+-  Instance = NULL;
+-  if (EFI_ERROR (gBS->LocateProtocol (&UsbfnIo, NULL, &Instance))) {
+-    Len = AsciiSPrint (Buf, sizeof (Buf), "[BDS] MISSING UsbfnIo\n\r");
+-  } else {
+-    Len = AsciiSPrint (Buf, sizeof (Buf), "[BDS] present UsbfnIo at 0x%p\n\r", Instance);
++  for (Index = 0; Index < ARRAY_SIZE (mBdsUsbDeps); Index++) {
++    Instance = NULL;
++    if (EFI_ERROR (gBS->LocateProtocol ((EFI_GUID *)&mBdsUsbDeps[Index].Guid, NULL, &Instance))) {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[USB] MISSING %a\n\r", mBdsUsbDeps[Index].Name);
++    } else {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[USB] present %a\n\r", mBdsUsbDeps[Index].Name);
++    }
++
++    SerialPortWrite ((UINT8 *)Buf, Len);
+   }
++}
+ 
+-  SerialPortWrite ((UINT8 *)Buf, Len);
++//
++// Hold the console for a few seconds before BDS launches FrontPage.
++//
++// FrontPage paints the whole framebuffer, so everything printed during DXE and
++// BDS is covered the instant it starts. Without this hold the probes are
++// unreadable, which is the whole reason the last few rounds produced no
++// information.
++//
++STATIC
++VOID
++BdsPortHoldScreen (
++  IN UINTN  Seconds
++  )
++{
++  BdsPortTrace ("holding console", NULL, 0, EFI_SUCCESS);
++  gBS->Stall (Seconds * 1000000);
+ }
+ 
+ STATIC
+@@ -1198,7 +1237,7 @@ BdsEntry (
+   // 13 DEPEX protocols is actually missing.
+   //
+   BdsPortCheckSwmDeps ();
+-  BdsPortCheckUsb ();
++  BdsPortCheckUsbDeps ();
+ 
+   //
+   // PORT: ask for the firmware UI unconditionally.
+@@ -1219,6 +1258,12 @@ BdsEntry (
+   //
+   OsIndication = EFI_OS_INDICATIONS_BOOT_TO_FW_UI;
+ 
++  //
++  // FrontPage paints the whole framebuffer, so everything printed above is
++  // covered the instant it starts. Hold long enough to actually read it.
++  //
++  BdsPortHoldScreen (6);
++
+   BootFwUi         = (BOOLEAN)((OsIndication & EFI_OS_INDICATIONS_BOOT_TO_FW_UI) != 0);
+   PlatformRecovery = (BOOLEAN)((OsIndication & EFI_OS_INDICATIONS_START_PLATFORM_RECOVERY) != 0);
+   //

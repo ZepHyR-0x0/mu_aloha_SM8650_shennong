@@ -1,0 +1,26 @@
+## @file
+#  UEFI Shell (with debug support), taken from this phone's own stock firmware.
+#
+# The module carries no UI name in the reference FV, so it was identified from its
+# strings: the data.load.elf command, the BinToSrcRelPath symbol lookup, and the
+# SP/ELR/SPSR plus X0-X11 / V0-V9 register dump an exception produces.
+#
+# The payload is a TE image (it starts with 'VZ'), but it is declared as PE32 here:
+# GenFfs refuses to build an application whose INF advertises TE, while EDK2's
+# PeCoffLoaderGetImageInfo sniffs the header and handles TE either way. So the section
+# says PE32 and the loader does the right thing with the bytes inside it.
+#
+# The GUID is the stock one, so the FFS entry is recognisable against the reference
+# firmware.
+##
+
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = Shell
+  FILE_GUID      = 8af09f13-44c5-96ec-1437-dd899cb5ee5d
+  MODULE_TYPE    = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = ShellCEntryLib
+
+[Binaries.AARCH64]
+  PE32|Shell.efi|*

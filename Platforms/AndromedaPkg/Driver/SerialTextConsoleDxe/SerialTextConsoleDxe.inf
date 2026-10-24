@@ -1,0 +1,38 @@
+## @file
+#  SerialTextConsoleDxe - SimpleTextOut/SimpleTextIn console over SerialPortLib.
+#
+#  On this port SerialPortLib is FrameBufferSerialPortLib, so console text goes
+#  straight to the framebuffer. Needed because GraphicsConsoleDxe requires a GOP
+#  plus HII fonts and renders nothing here, which made BDS and the shell run
+#  completely silently.
+#
+#  Copyright (c) 2026, Project Mu port. SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = SerialTextConsoleDxe
+  FILE_GUID      = 5E1C3A10-6D2B-4C8F-9A47-3B1E8F2D6C05
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = EfiEntry
+
+[Sources]
+  SerialTextConsoleDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  SerialPortLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiDevicePathProtocolGuid     ## PRODUCES
+  gEfiSimpleTextInProtocolGuid   ## PRODUCES
+  gEfiSimpleTextOutProtocolGuid  ## PRODUCES
+
+[Depex]
+  TRUE

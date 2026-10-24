@@ -1,0 +1,36 @@
+## @file
+#  GcdProbeDxe - report what the GCD actually contains for the addresses that
+#  keep failing to map. Read-only; performs no MMIO access.
+#
+#  Copyright (c) 2026, ProjectMu shennong port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = GcdProbeDxe
+  FILE_GUID                      = 5a19c3f7-2e84-4d6b-9f05-83c7a1e6b4d2
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = GcdProbeEntry
+
+[Sources]
+  GcdProbeDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  BaseLib
+  PrintLib
+  SerialPortLib
+  DxeServicesTableLib
+  BaseMemoryLib
+  DebugLib
+
+[Depex]
+  TRUE

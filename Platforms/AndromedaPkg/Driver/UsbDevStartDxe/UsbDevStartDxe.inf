@@ -1,0 +1,45 @@
+## @file
+#  UsbDevStartDxe - start the DWC3 peripheral controller.
+#
+#  Nothing in the stack calls StartController/StartDevice, so DCTL.RUN_STOP stays
+#  0 and no host can see the device. This driver builds a minimal descriptor set
+#  and calls EFI_USB_DEVICE_PROTOCOL.Start.
+#
+#  Copyright (c) 2026, ProjectMu shennong port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = UsbDevStartDxe
+  FILE_GUID                      = 3c81e6b2-57a4-4f19-8d60-c24b9e7a5f38
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UsbDevStartEntry
+
+[Sources]
+  UsbDevStartDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  QcomModulePkg/QcomModulePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  BaseLib
+  BaseMemoryLib
+  PrintLib
+  SerialPortLib
+  DebugLib
+
+[Protocols]
+  gEfiUsbDeviceProtocolGuid                     ## CONSUMES
+
+[Depex]
+  #
+  # UsbDeviceDxe publishes this; there is nothing to start before it exists.
+  #
+  gEfiUsbDeviceProtocolGuid

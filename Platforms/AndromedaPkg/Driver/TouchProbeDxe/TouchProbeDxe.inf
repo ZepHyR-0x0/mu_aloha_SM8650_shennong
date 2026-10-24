@@ -1,0 +1,35 @@
+## @file
+#  TouchProbeDxe - read-only probe of TLMM and the GENI SPI block used by the
+#  Synaptics TCM touch panel.
+#
+#  Copyright (c) 2026, ProjectMu shennong port.
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = TouchProbeDxe
+  FILE_GUID                      = 8f3c2a71-6d94-4e18-b7a3-1c59d0e4f862
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = TouchProbeEntry
+
+[Sources]
+  TouchProbeDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  BaseLib
+  IoLib
+  PrintLib
+  SerialPortLib
+  DebugLib
+
+[Depex]
+  TRUE

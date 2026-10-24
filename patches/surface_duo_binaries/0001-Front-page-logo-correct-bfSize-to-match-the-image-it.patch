@@ -1,0 +1,28 @@
+From c6f5a5360d48d78ca201dee132a97e0db8b92ed6 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Sat, 24 Oct 2026 17:04:04 +0800
+Subject: [PATCH] Front page logo: correct bfSize to match the image it
+ actually contains
+
+236x236 at 24 bpp gives 708 bytes per row and 167088 bytes of pixel data, so with a
+54-byte header the file should be 167142. bfSize claimed 167144, and
+TranslateBmpToGopBlt rejects a bitmap whose header disagrees with its contents:
+
+  BmpHeader->Size - BmpHeader->ImageOffset != DataSize
+
+The two extra bytes are padding past the declared image, so the file is truncated to
+167142 and bfSize corrected. Without this the front page logo never converts and the
+title bar layout that depends on it fails.
+---
+ .../RawFiles/Logo                             | Bin 167144 -> 167142 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/Epsilon/BOOT.XF.3.0-00527-SM8150LZB-1/RawFiles/Logo b/Epsilon/BOOT.XF.3.0-00527-SM8150LZB-1/RawFiles/Logo
+index abf3f8bb9f28fd691958c7fdb48c378157953628..e2ff9cf8f60cab57e72a8c380a1392cbb6ed05c9 100644
+GIT binary patch
+delta 20
+ccmaDclk3?`E@mg+XN}CQ%#2%^nI88509XbG!vFvP
+
+delta 23
+fcmaDhlk3GyE@mg+7mduV%#2%^nI88rF)#oCZ)*p~
+

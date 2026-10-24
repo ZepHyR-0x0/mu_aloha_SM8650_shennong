@@ -1,0 +1,135 @@
+From d4b6667dd1c34f4b95320afa21e4aa68a2890bbd Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Fri, 23 Oct 2026 10:54:15 +0800
+Subject: [PATCH 03/10] PORT: boot the firmware UI first, plus boot-menu
+ breadcrumbs
+
+The [BDS] probes showed the machine was resolving the boot manager menu fine
+('menu opt=0000 st=Success desc=FrontPage') but never launching it: BDS only
+boots PcdBootManagerMenuFile when OsIndications has BOOT_TO_FW_UI, when a hotkey
+is pressed, or after some Boot#### returns EFI_SUCCESS. On this port there is no
+OS, no keyboard (the power key maps to Enter) and no bootable Boot####, so it
+fell straight through to the Shell every time.
+
+Two changes:
+- Force OsIndication = EFI_OS_INDICATIONS_BOOT_TO_FW_UI before BootFwUi is
+  computed. In this MU fork OsIndication is declared and read but never assigned
+  from the variable, so overwriting it loses nothing. The UI block does not
+  return, so if FrontPage exits the normal path still runs and the Shell stays
+  reachable.
+- BdsPortTrace(): SerialPortWrite breadcrumbs for the boot options and the menu
+  ('menu', 'menu-go', 'menu-ret', 'try', 'done') with description, option number
+  and status, because DEBUG() is compiled out under MDEPKG_NDEBUG.
+---
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c | 75 ++++++++++++++++++++++++
+ 1 file changed, 75 insertions(+)
+
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index 598b02e..32583f1 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -18,6 +18,49 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/VariablePolicyHelperLib.h>
+ #include <Library/SerialPortLib.h>
+ 
++//
++// PORT: breadcrumbs for the boot-manager-menu path.
++//
++// RELEASE compiles DEBUG() away, so when FrontPage fails to launch there is no
++// trace at all - the machine simply ends up in the Shell and it is impossible to
++// tell whether BDS never tried the menu, tried it and got an error, or booted it
++// and the application itself bailed out. These lines go straight to the
++// framebuffer console (SerialPortWrite), same as the existing [BDS] probes.
++//
++STATIC
++VOID
++BdsPortTrace (
++  IN CONST CHAR8   *Tag,
++  IN CONST CHAR16  *Desc OPTIONAL,
++  IN UINT16         OptionNumber,
++  IN EFI_STATUS     Status
++  )
++{
++  CHAR8  Buf[192];
++  CHAR8  Ascii[44];
++  UINTN  Index;
++  UINTN  Len;
++
++  Ascii[0] = '\0';
++  if (Desc != NULL) {
++    for (Index = 0; (Index < sizeof (Ascii) - 1) && (Desc[Index] != L'\0'); Index++) {
++      Ascii[Index] = (Desc[Index] < 0x80) ? (CHAR8)Desc[Index] : '?';
++    }
++    Ascii[Index] = '\0';
++  }
++
++  Len = AsciiSPrint (
++          Buf,
++          sizeof (Buf),
++          "[BDS] %a opt=%04x st=%r desc=%a\n\r",
++          Tag,
++          OptionNumber,
++          Status,
++          Ascii
++          );
++  SerialPortWrite ((UINT8 *)Buf, Len);
++}
++
+ #define SET_BOOT_OPTION_SUPPORT_KEY_COUNT(a, c)  { \
+       (a) = ((a) & ~EFI_BOOT_OPTION_SUPPORT_COUNT) | (((c) << LowBitSet32 (EFI_BOOT_OPTION_SUPPORT_COUNT)) & EFI_BOOT_OPTION_SUPPORT_COUNT); \
+       }
+@@ -416,7 +459,9 @@ BootBootOptions (
+     // All the driver options should have been processed since
+     // now boot will be performed.
+     //
++    BdsPortTrace ("try ", BootOptions[Index].Description, BootOptions[Index].OptionNumber, EFI_NOT_READY);
+     EfiBootManagerBoot (&BootOptions[Index]);
++    BdsPortTrace ("done", BootOptions[Index].Description, BootOptions[Index].OptionNumber, BootOptions[Index].Status);
+ 
+     PlatformBootManagerProcessBootCompletion (&BootOptions[Index]);        // MU_CHANGE 00076 - record boot status
+ 
+@@ -1053,6 +1098,34 @@ BdsEntry (
+   //
+   BootManagerMenuStatus = EfiBootManagerGetBootManagerMenu (&BootManagerMenu);
+ 
++  //
++  // PORT: did BDS resolve a boot manager menu at all, and to what?
++  //
++  if (BootManagerMenuStatus == EFI_NOT_FOUND) {
++    BdsPortTrace ("menu-none", NULL, 0, BootManagerMenuStatus);
++  } else {
++    BdsPortTrace ("menu", BootManagerMenu.Description, BootManagerMenu.OptionNumber, BootManagerMenuStatus);
++  }
++
++  //
++  // PORT: ask for the firmware UI unconditionally.
++  //
++  // BDS only launches PcdBootManagerMenuFile (FrontPage) when the OS sets
++  // EFI_OS_INDICATIONS_BOOT_TO_FW_UI in OsIndications, or when a hotkey is
++  // pressed, or after some Boot#### returns EFI_SUCCESS. On this port there is
++  // no OS, no keyboard (only the power key, mapped to Enter) and no bootable
++  // Boot#### at all, so none of those can ever happen: BDS used to fall straight
++  // through to the Shell.
++  //
++  // Setting the bit here makes BDS boot FrontPage first. Note the block below
++  // does NOT return on success - if FrontPage exits, execution continues into
++  // the normal boot path, so the Shell remains reachable as a fallback.
++  //
++  // OsIndication is otherwise never populated in this MU fork (declared and read
++  // but never assigned from the variable), so overwriting it loses nothing.
++  //
++  OsIndication = EFI_OS_INDICATIONS_BOOT_TO_FW_UI;
++
+   BootFwUi         = (BOOLEAN)((OsIndication & EFI_OS_INDICATIONS_BOOT_TO_FW_UI) != 0);
+   PlatformRecovery = (BOOLEAN)((OsIndication & EFI_OS_INDICATIONS_START_PLATFORM_RECOVERY) != 0);
+   //
+@@ -1087,7 +1160,9 @@ BdsEntry (
+     //
+     // Directly enter the setup page.
+     //
++    BdsPortTrace ("menu-go", BootManagerMenu.Description, BootManagerMenu.OptionNumber, EFI_NOT_READY);
+     EfiBootManagerBoot (&BootManagerMenu);
++    BdsPortTrace ("menu-ret", BootManagerMenu.Description, BootManagerMenu.OptionNumber, BootManagerMenu.Status);
+   }
+ 
+   if (!PlatformRecovery) {

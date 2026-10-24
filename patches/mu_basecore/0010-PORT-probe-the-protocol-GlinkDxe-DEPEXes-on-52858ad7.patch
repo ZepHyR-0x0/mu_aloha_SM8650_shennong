@@ -1,0 +1,44 @@
+From 2ac1fbba5ad873c30aae3ea59be1646ac51bbbfe Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Fri, 23 Oct 2026 15:48:54 +0800
+Subject: [PATCH 10/10] PORT: probe the protocol GlinkDxe DEPEXes on (52858ad7)
+
+It resolves in no .dec - Qualcomm internal, almost certainly QMI. The NPA client
+that SSUsbInitCommon needs is created over that transport, so its absence is the
+best remaining explanation for Start() hanging rather than returning.
+
+  [USB] GlinkDep(52858ad7) MISSING | present 0x...
+---
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index 6c39da1..bbdb406 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -175,6 +175,25 @@ BdsPortCheckUsbDeps (
+ 
+     SerialPortWrite ((UINT8 *)Buf, Len);
+   }
++
++  //
++  // GlinkDxe DEPEXes on this GUID (52858ad7-...), which resolves in no .dec -
++  // it is a Qualcomm-internal protocol, almost certainly QMI. The NPA client
++  // that SSUsbInitCommon needs is created over that transport, and its absence
++  // is the best remaining explanation for Start() hanging.
++  //
++  {
++    EFI_GUID  Qmi = { 0x52858ad7, 0x0e44, 0x4f8b, { 0x9c, 0x0a, 0x2a, 0x1b, 0x7d, 0x53, 0x2e, 0x91 } };
++
++    Instance = NULL;
++    if (EFI_ERROR (gBS->LocateProtocol (&Qmi, NULL, &Instance))) {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[USB] GlinkDep(52858ad7) MISSING\n\r");
++    } else {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[USB] GlinkDep(52858ad7) present 0x%p\n\r", Instance);
++    }
++
++    SerialPortWrite ((UINT8 *)Buf, Len);
++  }
+ }
+ 
+ //

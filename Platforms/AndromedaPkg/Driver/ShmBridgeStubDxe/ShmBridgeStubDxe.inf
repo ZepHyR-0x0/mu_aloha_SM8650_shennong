@@ -1,0 +1,36 @@
+## @file
+# Minimal ShmBridge protocol producer for UFSDxe's RPMB listener.
+#
+# The real producer (ShmBridgeDxeLA) also issues SMC calls; on this port the
+# protocol never becomes available, and UFSDxe asserts at RpmbListener.c +160.
+# This driver publishes the same interface using plain page allocations.
+#
+# Copyright (c) 2024, Project Mu contributors.
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = ShmBridgeStubDxe
+  FILE_GUID                      = 8F3B7E24-6C1D-4A2E-9B5F-0D6C4A1E7B93
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = ShmBridgeStubInitialize
+
+[Sources]
+  ShmBridgeStubDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  PrintLib
+  SerialPortLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Depex]
+  TRUE

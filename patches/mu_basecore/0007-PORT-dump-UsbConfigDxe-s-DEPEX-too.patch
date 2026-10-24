@@ -1,0 +1,84 @@
+From b7dfafb1a268d4febc9a180b2e4e27be4f2037e5 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Fri, 23 Oct 2026 13:16:31 +0800
+Subject: [PATCH 07/10] PORT: dump UsbConfigDxe's DEPEX too
+
+All 16 of UsbfnDwc3Dxe's dependencies are present, including the Qualcomm
+protocol fa5f306b, so its dispatch conditions are met - yet EFI_USBFN_IO_PROTOCOL
+never appears. That points at UsbConfigDxe, which on this port is the runtime
+trigger that makes the usbfn stack bind and publish: with it USBFN_IO appears,
+without it USBFN_IO is never produced.
+
+UsbConfigDxe's DEPEX has six entries:
+  gEfiChipInfoProtocolGuid  (b0760469)
+  1c34f691                  (Qualcomm, in no .dec)
+  fa5f306b                  (Qualcomm, in no .dec)
+  gEfiSMEMProtocolGuid      (f4e5c7d0)
+  gEfiPlatformInfoProtocolGuid (157a5c45)
+  gEfiAcpiSdtProtocolGuid   (eb97088e)  <- prime suspect, our ACPI is unverified
+
+BdsPortCheckUsbCfgDeps() prints [USBC] present/MISSING for each.
+---
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c | 42 ++++++++++++++++++++++++
+ 1 file changed, 42 insertions(+)
+
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index cc2d96f..adbdcf8 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -143,6 +143,47 @@ BdsPortCheckUsbDeps (
+   }
+ }
+ 
++//
++// PORT: and now UsbConfigDxe's DEPEX.
++//
++// All 16 of UsbfnDwc3Dxe's dependencies are present, yet EFI_USBFN_IO_PROTOCOL
++// never appears. Established earlier on this port: UsbConfigDxe is the runtime
++// trigger that makes the usbfn stack bind and publish - without it USBFN_IO is
++// never produced even though UsbfnDwc3Dxe has dispatched. So the next thing to
++// check is whether UsbConfigDxe itself got to run.
++//
++STATIC CONST BDS_PORT_PROBE  mBdsUsbCfgDeps[] = {
++  { { 0xb0760469, 0x970c, 0x487a, { 0xa4, 0xb5, 0x28, 0xdb, 0x7b, 0x45, 0xce, 0xf1 } }, "ChipInfo      " },
++  { { 0x1c34f691, 0xd33d, 0x4e14, { 0xb8, 0xf8, 0x32, 0xc6, 0xc0, 0x29, 0xe9, 0x5b } }, "Qcom?1c34f691 " },
++  { { 0xfa5f306b, 0xf47d, 0x4ac4, { 0xa4, 0x7d, 0x88, 0x2f, 0x82, 0x04, 0xec, 0x30 } }, "QcomPmic?     " },
++  { { 0xf4e5c7d0, 0xd239, 0x47cb, { 0xaa, 0xcd, 0x7f, 0x66, 0xef, 0x76, 0x32, 0x38 } }, "SMEM          " },
++  { { 0x157a5c45, 0x21b2, 0x43c5, { 0xba, 0x7c, 0x82, 0x2f, 0xee, 0x5f, 0xe5, 0x99 } }, "PlatformInfo  " },
++  { { 0xeb97088e, 0xcfdf, 0x49c6, { 0xbe, 0x4b, 0xd9, 0x06, 0xa5, 0xb2, 0x0e, 0x86 } }, "AcpiSdt       " },
++};
++
++STATIC
++VOID
++BdsPortCheckUsbCfgDeps (
++  VOID
++  )
++{
++  CHAR8  Buf[64];
++  UINTN  Index;
++  UINTN  Len;
++  VOID   *Instance;
++
++  for (Index = 0; Index < ARRAY_SIZE (mBdsUsbCfgDeps); Index++) {
++    Instance = NULL;
++    if (EFI_ERROR (gBS->LocateProtocol ((EFI_GUID *)&mBdsUsbCfgDeps[Index].Guid, NULL, &Instance))) {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[USBC] MISSING %a\n\r", mBdsUsbCfgDeps[Index].Name);
++    } else {
++      Len = AsciiSPrint (Buf, sizeof (Buf), "[USBC] present %a\n\r", mBdsUsbCfgDeps[Index].Name);
++    }
++
++    SerialPortWrite ((UINT8 *)Buf, Len);
++  }
++}
++
+ //
+ // Hold the console for a few seconds before BDS launches FrontPage.
+ //
+@@ -1238,6 +1279,7 @@ BdsEntry (
+   //
+   BdsPortCheckSwmDeps ();
+   BdsPortCheckUsbDeps ();
++  BdsPortCheckUsbCfgDeps ();
+ 
+   //
+   // PORT: ask for the firmware UI unconditionally.

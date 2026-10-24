@@ -1,0 +1,119 @@
+From 49e3cd66c86224c01fb8562bab590bb83fc3dcb5 Mon Sep 17 00:00:00 2001
+From: porter <port@local>
+Date: Thu, 22 Oct 2026 09:45:30 +0800
+Subject: [PATCH 02/10] PORT: entry probes [ACPI]/[DISP]/[BDS] via
+ SerialPortWrite
+
+---
+ MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c       | 13 +++++++++++++
+ .../Universal/Acpi/AcpiPlatformDxe/AcpiPlatform.c   |  7 +++++++
+ .../Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf        |  1 +
+ MdeModulePkg/Universal/BdsDxe/BdsDxe.inf            |  1 +
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c            |  7 +++++++
+ 5 files changed, 29 insertions(+)
+
+diff --git a/MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c b/MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c
+index d905a41..e5e2203 100644
+--- a/MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c
++++ b/MdeModulePkg/Core/Dxe/Dispatcher/Dispatcher.c
+@@ -467,6 +467,13 @@ CoreDispatcher (
+           CHAR8  HexChars[] = "0123456789ABCDEF";
+           UINTN  TraceIndex;
+ 
++          //
++          // FrameBufferSerialPortLib has no constructor and SerialPortWrite does
++          // not check m_Initialized; call it explicitly (idempotent) so the
++          // console position pointer is set up before the first write.
++          //
++          SerialPortInitialize ();
++
+           TraceLine[0] = '[';
+           TraceLine[1] = 'D';
+           TraceLine[2] = 'R';
+@@ -597,6 +604,12 @@ CoreDispatcher (
+     }
+   } while (ReadyToRun);
+ 
++  {
++    STATIC CHAR8 PortMsg[] = "[DISP] dispatch complete\n";
++    SerialPortInitialize ();
++    SerialPortWrite ((UINT8 *)PortMsg, sizeof (PortMsg) - 1);
++  }
++
+   //
+   // Close DXE dispatch Event
+   //
+diff --git a/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatform.c b/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatform.c
+index 8b58b9e..7fabc48 100644
+--- a/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatform.c
++++ b/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatform.c
+@@ -14,6 +14,7 @@
+ #include <Library/BaseLib.h>
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/DebugLib.h>
++#include <Library/SerialPortLib.h>
+ #include <Library/PcdLib.h>
+ 
+ #include <IndustryStandard/Acpi.h>
+@@ -171,6 +172,12 @@ AcpiPlatformEntryPoint (
+   UINTN                          TableSize;
+   UINTN                          Size;
+ 
++  {
++    STATIC CHAR8 PortMsg[] = "[ACPI] entry\n";
++    SerialPortInitialize ();
++    SerialPortWrite ((UINT8 *)PortMsg, sizeof (PortMsg) - 1);
++  }
++
+   Instance     = 0;
+   CurrentTable = NULL;
+   TableHandle  = 0;
+diff --git a/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf b/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf
+index ca29de4..68ad62a 100644
+--- a/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf
++++ b/MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf
+@@ -29,6 +29,7 @@
+   MdeModulePkg/MdeModulePkg.dec
+ 
+ [LibraryClasses]
++  SerialPortLib
+   UefiLib
+   PcdLib
+   DebugLib
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsDxe.inf b/MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
+index d8f9c29..b6805fb 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
++++ b/MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
+@@ -39,6 +39,7 @@
+   MdeModulePkg/MdeModulePkg.dec
+ 
+ [LibraryClasses]
++  SerialPortLib
+   DevicePathLib
+   BaseLib
+   MemoryAllocationLib
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index 79535cf..598b02e 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -16,6 +16,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include "Language.h"
+ #include "HwErrRecSupport.h"
+ #include <Library/VariablePolicyHelperLib.h>
++#include <Library/SerialPortLib.h>
+ 
+ #define SET_BOOT_OPTION_SUPPORT_KEY_COUNT(a, c)  { \
+       (a) = ((a) & ~EFI_BOOT_OPTION_SUPPORT_COUNT) | (((c) << LowBitSet32 (EFI_BOOT_OPTION_SUPPORT_COUNT)) & EFI_BOOT_OPTION_SUPPORT_COUNT); \
+@@ -720,6 +721,12 @@ BdsEntry (
+   EFI_BOOT_MANAGER_LOAD_OPTION    PlatformDefaultBootOption;
+   BOOLEAN                         PlatformDefaultBootOptionValid;
+ 
++  {
++    STATIC CHAR8 PortMsg[] = "[BDS] entry\n";
++    SerialPortInitialize ();
++    SerialPortWrite ((UINT8 *)PortMsg, sizeof (PortMsg) - 1);
++  }
++
+   HotkeyTriggered = NULL;
+   Status          = EFI_SUCCESS;
+   BootSuccess     = FALSE;

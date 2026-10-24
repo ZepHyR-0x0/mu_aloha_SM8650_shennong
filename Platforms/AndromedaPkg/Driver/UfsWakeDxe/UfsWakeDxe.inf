@@ -1,0 +1,46 @@
+## @file
+#  Wake the UFS device to Active after UFSDxe has built its transfer list.
+#
+#  The boot chain can leave the device in the Sleep/PowerDown family, and UFSDxe only
+#  issues SSU-Active from a sleep-to-wake path that boot never takes. The result is
+#  that every read comes back with sense 04/02 and no volume ever enumerates.
+#
+#  Runs after UFSDxe on purpose: it reads UTRLBA and rides the list that is already
+#  running rather than programming its own.
+#
+#  Never touches TLMM - the UFS reset line is GPIO 210 and driving it from post-EBS DXE
+#  killed the reference device into EDL.
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = UfsWakeDxe
+  FILE_GUID                      = 3C6A9E52-1D84-4B7F-A2E3-5F0B8C7D4916
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UfsWakeDxeInitialize
+
+[Sources.common]
+  UfsWakeDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  CacheMaintenanceLib
+  DebugLib
+  IoLib
+  MemoryAllocationLib
+  PrintLib
+  SerialPortLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiBlockIoProtocolGuid
+  gEfiCpuArchProtocolGuid
+
+[Depex]
+  TRUE

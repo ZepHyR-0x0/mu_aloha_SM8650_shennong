@@ -1,0 +1,35 @@
+## @file
+#  Clear the UFS controller's enable bit before UFSDxe runs.
+#
+#  The controller arrives enabled with the device present, and UFSDxe returns success
+#  without publishing any block device. Clearing HCE forces it to initialise from
+#  scratch. Both states are logged to the ring.
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = UfsPreDxe
+  FILE_GUID                      = 7b2f4c11-8a3d-4e6b-9c25-1f4a6d8e0b37
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UfsPreDxeInitialize
+
+[Sources.common]
+  UfsPreDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  MemoryAllocationLib
+  BaseMemoryLib
+  IoLib
+  PrintLib
+  SerialPortLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Depex]
+  TRUE
