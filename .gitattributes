@@ -1,2 +1,16 @@
-# Auto detect text files and perform LF normalization
 * text=auto
+*.sh    text eol=lf
+*.py    text eol=lf
+*.c     text eol=lf
+*.h     text eol=lf
+*.inf   text eol=lf
+*.dec   text eol=lf
+*.dsc   text eol=lf
+*.fdf   text eol=lf
+*.inc   text eol=lf
+*.patch text eol=lf
+*.efi   binary
+*.img   binary
+*.dtb   binary
+*.png   binary
+*.bmp   binary
