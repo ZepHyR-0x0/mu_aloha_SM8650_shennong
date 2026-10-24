@@ -1,5 +1,7 @@
 # 状态（2026-10-24，`usb-line` @ `c9e127dd`）
 
+> 目标：为 Xiaomi 14（shennong / SM8650）的 **UniXNU / Hackios** 开发提供可启动的 Project Mu 基座。
+
 ## 已完成
 
 ### 启动 / UI

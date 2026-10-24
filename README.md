@@ -7,7 +7,12 @@ Xiaomi 14（shennong / SM8650）Project Mu UEFI 移植的**核心源码 overlay 
 - 基线：Project Mu Aloha（`Project-Aloha/mu_aloha_platforms`，mu202502 线）
 - 状态：**能进 FrontPage GUI；UFS 已打通（6 LUN / 123 分区）**；TZ/SCM/RPMB 与 USB（I2C）仍未完成
 
-详细状态见 [STATUS.md](STATUS.md)，构建见 [BUILDING.md](BUILDING.md)，再分发限制见 [NOTICE.md](NOTICE.md)。
+详细状态见 [STATUS.md](STATUS.md)，构建见 [BUILDING.md](BUILDING.md)。
+
+## 目标
+
+主要期望启发并支撑本机型（Xiaomi 14 / shennong / SM8650）的 **UniXNU / Hackios** 开发：
+提供一个能启动、能读 UFS、能通过二维码取日志的 Project Mu 基座，方便后续移植与调试。
 
 ## 本仓库包含什么
 
@@ -50,4 +55,8 @@ pip install --upgrade -r pip-requirements.txt
 - 不拆机、不接 UART，调试只通过 USB / 屏幕二维码。
 - 崩溃恢复：长按电源 10–15 秒。
 - 该镜像面向 **Xiaomi 14 / shennong**；不要刷到其他机型。
-- 仓库内的 Qualcomm/Xiaomi 二进制 blob 仅用于本机研究，公开再分发前请阅读 [NOTICE.md](NOTICE.md)。
+
+## 许可与免责
+
+代码沿用 Project Mu Aloha 及其子模块的许可证（见 [LICENSE](LICENSE)），第三方组件遵循各自许可证。
+本仓库按“现状”提供，仅用于研究与开发，不提供任何担保，使用风险自负。
