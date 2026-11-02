@@ -15,11 +15,11 @@ Usage (inside WSL):
 """
 import os, re, sys, uuid
 
-EXT = "/mnt/l/Desktop/ProjectMu/extract"
-REPO = "/mnt/l/Desktop/ProjectMu/mu_aloha_platforms_sm8650-main"
+REPO = os.environ.get("MU_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+EXT = os.environ.get("MU_EXTRACT") or os.path.join(os.path.dirname(REPO), "extract")
 DEV = REPO + "/Platforms/ShennongPkg/Device/xiaomi-shennong"
 APRIORI = DEV + "/profiles/APRIORI.full.inc"
-FVLIST = "/root/fvlist.txt"
+FVLIST = os.environ.get("MU_FVLIST") or os.path.expanduser("~/fvlist.txt")
 
 PINNED = ["dxemain", "pcd"]          # must stay first, stock starts with DxeCore
 

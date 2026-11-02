@@ -14,15 +14,10 @@
 #define BOOT_LOG_H_
 
 //
-// How many log bytes the QR pages present. The ring itself is bigger; only
-// this tail is turned into QR pages.
+// The entire region is 64 KiB including its ring header. Reads never exceed
+// either the actual ring capacity or this 64 KiB snapshot allocation.
 //
-//
-// The ring lives in the "UEFI Log" region, which is 64 KB, so a 16 KB read window
-// only ever returned the tail and threw away the early boot - exactly where the UFS
-// drivers run. 60 KB leaves room for the 16-byte ring header.
-//
-#define BOOT_LOG_MAX_BYTES  (64 * 1024)
+#define BOOT_LOG_MAX_BYTES  (256 * 1024)
 
 EFI_STATUS
 BootLogRead (
@@ -30,5 +25,8 @@ BootLogRead (
   IN  UINTN  BufferSize,
   OUT UINTN  *LogLength
   );
+
+EFI_STATUS BootLogSave (CONST CHAR8 *Phase);
+EFI_STATUS BootLogReadStored (CHAR8 *Buffer, UINTN *Length, BOOLEAN Previous);
 
 #endif // BOOT_LOG_H_

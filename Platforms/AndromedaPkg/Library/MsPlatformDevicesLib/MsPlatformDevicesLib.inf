@@ -32,6 +32,8 @@
   DebugLib
   DevicePathLib
   IoLib
+  PrintLib
+  SerialPortLib
   UefiBootServicesTableLib
   UefiLib
   AcpiPlatformUpdateLib

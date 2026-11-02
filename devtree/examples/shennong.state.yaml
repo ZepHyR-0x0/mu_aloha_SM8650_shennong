@@ -1,0 +1,506 @@
+meta:
+  updated: '2026-11-02'
+  source: b341 实机：COM20 CDC 控制台、Shell echo、174412 字节日志 1.495 秒读取、1440x3200 截图 12.96 秒接收；b326 18D1:D00D 枚举确认
+  log_sha256: a43984c8dda9348a68a089457a65090131f3e7e5892e0d0927417ffd847676ca
+  baseline: b326 标准 USB 枚举打通；b328 CDC Shell 与 RAM 盘；b329 BootMenu 两级菜单；b338 七项修复与音量上屏；b339 USB 切换与启动优化；b340 Shell RAM 与 Python 控制台；b341 CDC 修复、5 秒无操作自动进 GUI、进表单前默认启动 CDC、logcat-last/logsync/shell/reboot
+    远程命令
+  image_sha256: e728af81d5e8e775965cec10c00a6cdb642f28f1a5e97b48c11b8b739ae6186f
+  photo_sha256: 439ced89adb9317b69ac537872c0b15c1aeec4f13f8a88cef310f33fb784138b
+  photos_sha256:
+    photo-b232-EP0-pool-success.png: 439ced89adb9317b69ac537872c0b15c1aeec4f13f8a88cef310f33fb784138b
+  logfs_dump_sha256: 943a0393f40eb9662bc7dc8d9fa0eacc129affec7957f322d5f252c6c19d84f3
+  historical_b320_log_last_sha256: 3b6c16e3791580c04952b51883b2b4b32910c68d96a1040b56a23fc3359177f1
+states:
+  dxe_core:
+    state: partial
+    evidence: b228 FS日志log574有原厂UsbDevice入口，log849协议存在；USB TEST照片显示RESIDENT/handles1。
+    note: 恢复原厂DEPEX后已观察到发布；本次照片未走b228恢复加载分支。用户报告StartEx之后重启，确切异常未捕获。
+    updated: '2026-10-30'
+  chipinfo:
+    state: ok
+    evidence: ChipInfo 分发完成；QC 驱动依赖的 ChipInfo/PlatformInfo 可用
+  hwio:
+    state: ok
+    evidence: HWIO 表可用：UFS_MEM_UFS = 0x1D84000；GCD 探针能解析全部关键区间
+  dalsys:
+    state: ok
+    evidence: DAL 链走通；SMEM/I2C/GCD 均建立在 DAL 之上
+  smem:
+    state: ok
+    evidence: SmemDxe 分发完成；SCM/SMEM 探针正常
+  ipcc:
+    state: ok
+    evidence: IPCCDxe 分发完成（GLINK 的 QMI 客户端缺失是上层问题）
+  glink:
+    state: partial
+    evidence: 本地GLINK发布有记录，当前没有远端/QMI成功证据。
+    note: 不将本地协议存在当作远端服务就绪。
+    updated: '2026-10-31'
+  gic:
+    state: ok
+    evidence: ArmGicDxe 分发；中断可用（触摸 IRQ/定时器正常）
+  timer:
+    state: ok
+    evidence: ArmTimerDxe 分发；Metronome 可用
+  tlmm:
+    state: ok
+    evidence: '[TP] gpio48/49/50/51 SPI mux 成功；gpio161 reset、gpio162 IRQ、gpio164 avdd 均读写正确
+
+      '
+    note: 早期 TouchProbeDxe 读 TLMM 会重启，该探针已禁用；触摸驱动自己的 GPIO 访问是正常的。
+  aoss:
+    state: ok
+    evidence: '[GCD] AOSS @0xB000000 in [0xB000000+0x5000000] type=mmio attr=4001；旧 AOSS nonexistent 现象不再出现'
+  rpmh:
+    state: ok
+    evidence: 'b196: ldoi1=44500/880mV、ldoi3=44600/1200mV，VRM三个请求全部完成。'
+    note: VRM已经验证；BCM SN2属于b197待验证路径。
+    updated: '2026-10-29'
+  gcc:
+    state: patched
+    evidence: PatchedBinaries/ClockDxe.efi 与 stock 差 4 字节 @0xA810；DXE.inc:215 已启用；[TP] clock by name -> Success, id=0x10128
+    note: DXE.inc 注释称它“就是 stock”，但哈希不符（stock 是 ClockDxe.efi.bak / extract 版本）。
+  icb:
+    state: partial
+    evidence: ICBDxe已分发；历史USB NPA投票在ICBDxe异常，b196仍禁用。
+    note: UFS为A2NOC，不能证明USB A1NOC/SN2工作。
+    updated: '2026-10-29'
+  npa:
+    state: partial
+    evidence: NpaDxe接口已发布；USB arbiter客户端投票历史测试异常。
+    note: 发布接口不等于客户端能工作。
+    updated: '2026-10-29'
+  scm:
+    state: partial
+    evidence: b318 SCM=0x50002，ShmBridge/clientEnv非零，普通SMC成功；b319 SCM PE等于原厂。
+    note: SMC传输已通，不能据此宣称所有安全服务/PAS已通。
+    updated: '2026-10-31'
+  smmu:
+    state: partial
+    evidence: sCR0 bit0是CLIENTPD，1禁用、0启用客户端；S2CR TYPE在[17:16]，CBNDX在[7:0]。
+    note: 移除把最低两位当TYPE的启动写入，仅观察。寄存器可读或值不变不能排除配置问题。
+    updated: '2026-10-31'
+  tz:
+    state: partial
+    evidence: 普通SMC/ShmBridge可回应；FeatureEnablerDxe股票字符串含featenabler/featenabler_a，APP_QUERY_APPID在加载前ELF_SIGNATURE_ERROR。
+    note: 未绕过认证。抽出的FeatureEnablerDxe与原厂一致；需要同版本feature TA签名链对照，不能凭本地句柄宣称TZ应用全部可用。
+    updated: '2026-11-01'
+  qseecom:
+    state: partial
+    evidence: 兼容loader可为keymaster返回对象；featenabler签名仍失败。
+    note: b319观察metadata/size/address、ELF/PH CRC及槽状态；Cmd6/15/16仍拒绝。
+    updated: '2026-10-31'
+  spss:
+    state: fail
+    evidence: 'b196: PIL_AUTH_AND_RESET(02000205) TzStatus=FFCFFFB9；fwload ERR fail。'
+    note: ''
+    updated: '2026-10-29'
+  keymaster:
+    state: partial
+    evidence: b318 Cmd1 req56返回Success/FFFF0001；原厂4F04只有loader ret0才建立FFFF句柄。
+    note: loader返回成功已证明，服务调用/名称查询未验证；b319有界只读槽名称/对象观察。
+    updated: '2026-10-31'
+  ufs_phy:
+    state: ok
+    evidence: UFS 控制器已工作，PHY 链路正常（HCS/UTRLRDY 均置位）
+  ufs_ice:
+    state: unknown
+    evidence: '[GCD] UFS_ICE @0x1D88000 type=mmio；未做加密功能验证'
+    note: ICE 不参与启动，已从 UFS 硬依赖中移出。
+  ufs:
+    state: patched
+    evidence: 'b196: BlockIo129、PartitionInfo123；keymaster_a/b 512KiB只读读取成功。'
+    note: 不增加设备分区写入；USB与UFS为不同master路径。
+    updated: '2026-10-29'
+  usb_config:
+    state: partial
+    evidence: 实际b327的UsbConfigDxe与本机提取原厂相同；wrapper两次repeater核验/四次WCD更新在PE中仍在。
+    note: USB标准枚举成功不能等价于每个PHY/routing条件都已单独证明。
+    updated: '2026-10-31'
+  usb_tcsr:
+    state: ok
+    evidence: 'b196: usb_int_dyn_en_dis=F，interface gate Success。'
+    note: ''
+    updated: '2026-10-29'
+  usb_eud:
+    state: unused
+    evidence: 'b209: 088E2000=0，EUD未启用。'
+    note: 未再读取b208异常地址0C276000；此读数只说明本次EUD开关状态。
+  usb_hsphy:
+    state: partial
+    evidence: 真实原厂8780/E25C的HS PHY写序列和PIPE/UTMI分支在ARM64执行中验证；外部GPIO/clock仍模拟。
+    note: b326在native HS init前确认repeater；本机电气状态仍待USBBOARD/USBRPTR和host枚举。
+    updated: '2026-10-31'
+  usb_ssphy:
+    state: partial
+    evidence: b225 log1054 ssusb_phy_init_success lane1。
+    note: 初始化字符串不证明USB3链接或枚举成功。
+    updated: '2026-10-30'
+  usb_dwc3:
+    state: partial
+    evidence: 原厂9CEC/9CF0→91A4/91BC明确PAR1低32位、PAR0高32位；真实ARM64模型验证TRB地址0x20010000。
+    note: 旧b314探针实际提交Phys<<32。正常/忙超时模型通过，真实MMU/DMA/PHY/复位仍未验证。
+    updated: '2026-10-31'
+  usb_xhci:
+    state: unknown
+    evidence: XhciDxe/UsbBusDxe 已编入；b123 无主机枚举或设备接入记录
+  usb_tcpm:
+    state: partial
+    evidence: 历史本地TypeC/VBUS查询Success；b225原厂报告Attach/UFP/CC2。
+    note: 本地PMIC USB查询与远端PMIC GLINK分开；完整PD/UCSI未验证。
+    updated: '2026-10-30'
+  usb_hid:
+    state: unknown
+    evidence: UsbKbDxe 已编入；b123 没有 USB 键盘/鼠标枚举记录
+  usb_device:
+    state: ok
+    evidence: b326 实机 18D1:D00D / Android Bootloader Interface / OK err0；b341 GUI 进入表单前默认启动 CDC，USB 页仍可选 logfs、CDC、RAM 或关闭。
+    note: 标准枚举已实机打通；vendor描述符没有fastboot命令引擎。b327新增的类协议还需实机。
+    updated: '2026-11-02'
+  wcd939x:
+    state: partial
+    evidence: b326 wrapper在native初始化后恢复WCD，并出现枚举成功；before/restored没有完整留在拼接日志。
+    note: 保留I2C页/位保护；不能宣称native reset必然破坏WCD，音频也未因此启动。
+    updated: '2026-10-31'
+  dispcc:
+    state: unused
+    evidence: UEFI 不接管 DISPCC；由 ABL 预设
+    note: 不是失败，是当前设计不启用。
+  mdss:
+    state: unused
+    evidence: DisplayDxe/MDSS 未启用；UEFI 直接沿用 ABL 帧缓冲
+  dsi0:
+    state: unused
+    evidence: UEFI 不做 DSI 重初始化；面板由 ABL 点亮
+  panel:
+    state: partial
+    evidence: AMOLED DCS 亮度：init 0x133 / max 0xFFF；ABL 点亮后 UEFI 无运行时控制
+    note: 能显示，但亮度固定；不是“打通亮度”。
+  disp_console:
+    state: ok
+    evidence: b196 GUI、QRA日志页可显示并回传RAM ring。
+    note: 固定亮度限制继续记在panel。
+    updated: '2026-10-29'
+  gpi:
+    state: unknown
+    evidence: GpiDxe 已编入；SMC 报告记录 PIL 0x2000205 -> 0xFFCFFFB9；触摸链路不使用 GPI
+  geni1:
+    state: ok
+    evidence: QUPv3_1 的 I2C 0xA8C000 与 SPI 0xA90000 都能访问
+  spi_touch:
+    state: ok
+    evidence: TouchGpio.c GPIO位翻转SPI读取TCM；b196帧和坐标正常。
+    note: 不使用GENI/GPI DMA，不能据此证明GPI工作。
+    updated: '2026-10-29'
+  touch:
+    state: ok
+    evidence: b318 已解决：根因是 L12/IOVDD 在 UEFI 中未投电，投电后芯片应答 S3910 A0B0-15.2；传输层为 GPIO 位翻转 SPI。b329 增加 BootMenu 拖拽滚动。
+    note: 滚动手感与FileBrowser一致；重复点击不再重复堆分配。
+    updated: '2026-11-02'
+  buttons:
+    state: patched
+    evidence: b196多次QRA ended by Enter；电源键退出日志页有效。
+    note: ''
+    updated: '2026-10-29'
+  pmic_arb:
+    state: patched
+    evidence: PatchedBinaries/SPMIDxe.efi 与 stock 差 8 字节 @0x154C；DXE.inc:77 已启用；charger port 0 rc=0 raw=0x1
+    note: SPMI 通路可用，AOSS 也已正确映射。
+  pmic:
+    state: partial
+    evidence: 'PmicDxeLa（重建版）已运行：BatteryTemperature: 25，但 BatteryVoltage: 0'
+    note: 驱动在，ADC/FG 电压没闭环；不能当作电池管理可用。
+  pmic_glink:
+    state: partial
+    evidence: b323本地PMIC GLINK接口存在，电池后端查询已成功。
+    note: PIL Not Found，ADSP启动和GLINK远端消息仍未证明。
+    updated: '2026-10-31'
+  charger:
+    state: partial
+    evidence: b323原厂charger入口Success，ChargerEx gate1，电池后端查询成功。
+    note: 电池存在和连接状态getter可返回；电压ADC和实际充电控制未证实。
+    updated: '2026-10-31'
+  fuelgauge:
+    state: partial
+    evidence: b321电池ADC和ChargerEx getter均Unsupported。
+    note: b322板号回退不等于燃料计恢复；SOC/温度/有效电压待实机数据。
+    updated: '2026-10-31'
+  lpass:
+    state: partial
+    evidence: 主ADSP固件结构可读；当前没有UEFI下PAS启动或远端应答成功证据。
+    note: 平台页仅定位PIL/SCM/GLINK；文件存在不能证明LPASS/ADSP运行。
+    updated: '2026-10-31'
+  adsp_fw_files:
+    state: ok
+    evidence: 最新log-stock第307..314在modem_a\image读取adsp.mdt和adsp_dtb.mdt，51+1所需payload大小正确。
+    note: extract/shennnong_dsp.img是ext4共享库分区；b320只在电脑解包/哈希，不能用共享库代替主固件启动。
+    updated: '2026-10-31'
+  i2c_audio:
+    state: ok
+    evidence: '[DIAG] qcom-i2c open 0x0e -> rc=0；read 0x002 -> 0x28；WCD 五条 write rc=0'
+  audio_out:
+    state: todo
+    evidence: 当前UEFI没有音频播放后端；实际扬声器链为LPASS/TDM1+CS35L43。
+    note: 移除误连到WCD939x USB switch的依赖边。本轮交付状态/条件核对，未实现播放。
+    updated: '2026-10-31'
+  pcie:
+    state: todo
+    evidence: shennong_fdt.dts PCIe0默认使能、PCIe1禁用；当前FV只有XhciPciEmulationDxe，未加入PciHostBridgeDxe/PciBusDxe/SM8650 rootbridge。
+    note: 判定为未开始而非链路故障；需先补通用PCI栈和PHY/时钟/SMMU/MSI初始化，HW未通电。
+    updated: '2026-11-01'
+  wlan:
+    state: todo
+    evidence: DT cnss_pci0位于PCIe0，cnss_wlan_region 32MiB；UEFI未加载WlanDxe。
+    note: 应依赖PCIe；未开始，不能判定射频/固件问题。BSP cnss2可用于后续。
+    updated: '2026-11-01'
+  nfc:
+    state: unknown
+    evidence: 无任何实机证据
+  gpu:
+    state: unused
+    evidence: UEFI 阶段不需要 3D，可移除
+  usb_refclk:
+    state: ok
+    evidence: 'b196: USB2 refclk从00000000置为00000001，enabled YES。'
+    note: ''
+    updated: '2026-10-29'
+  usb_noc:
+    state: partial
+    evidence: 历史RPMh部分投票/寄存器成功，NPA/ICB调用亦有异常。
+    note: 尚未证明USB A1NOC/SN2整条互连已建立；UFS成功不替代USB master验证。
+    updated: '2026-10-31'
+  usb_smmu:
+    state: partial
+    evidence: b323验证原厂USB0独占CB8、SCTLR E0/TTBR0/1零、identity buffers并退休旧slot4。
+    note: Submit返回且GUI存活；命令完成不等于数据/事件DMA或全部枚举通过。
+    updated: '2026-10-31'
+  ram_log:
+    state: partial
+    evidence: b327实际FD含81F00000/256KiB reserved日志区，生产writer/reader wrap及canary通过。
+    note: 文本容量262120字节+24字节头；避开81D00000..81F00000 SMEM。手机新容量待实机。
+    updated: '2026-10-31'
+  usb_ep0_queue:
+    state: ok
+    evidence: b326实际主机请求连续完成device/config descriptor、SET_ADDRESS、GET_STATUS、SET_CONFIGURATION。
+    note: native EP0队列/控制传输已有实机结果，不能再沿用b230的无证据状态；新MSC/CDC bulk仍待实机。
+    updated: '2026-10-31'
+  usb_event_dma:
+    state: ok
+    evidence: b326原始日志含busRESET 00000101、CONNECT_DONE 00000201、真实SETUP和配置请求。
+    note: DMA事件和EP0枚举链已跨过；b327保留SID/SMR/PAR/归属保护，不跳过preflight。
+    updated: '2026-10-31'
+  pmic_adc:
+    state: partial
+    evidence: b323板号/ADC通知链有效，电池ADC仍Unsupported。
+    note: 电压3500来源未核实；不显示真实电量或温度。
+    updated: '2026-10-31'
+  qsee_query:
+    state: ok
+    evidence: b318正确 feature6：0x02000603 -> Success，结果1/0x02404000/0。
+    note: 已实测查询；不是ADSP/USB权限成功证明。
+    updated: '2026-10-31'
+  usb_repeater:
+    state: partial
+    evidence: b326包含FD46/FD08与device清理后获得标准枚举；完整USBRPTR before/ready记录未在拼接日志保留。
+    note: 不能把关联进展写成FD46唯一根因；本轮保留已核验单字节掩码顺序。
+    updated: '2026-10-31'
+  repeater_vdd18:
+    state: partial
+    evidence: b212 log647–651：ldob15=40A00，1800mV/mode7/enable1均Success。
+    note: RPMh确认资源请求；物理电压尚未测量。
+    updated: '2026-10-29'
+  repeater_vdd3:
+    state: partial
+    evidence: b212 log657–662：ldob5=41100，3104mV/mode7/enable1均Success。
+    note: RPMh确认资源请求；物理电压尚未测量。
+    updated: '2026-10-29'
+  adsp_mdt_integrity:
+    state: ok
+    evidence: 最新UEFI日志主ADSP 55PHDR/53load/2BSS/51payload/bad0；DTB 3PHDR/1load/1payload/bad0。
+    note: 结构可达已实测；认证/启动和远端服务未证明。
+    updated: '2026-10-31'
+  adsp_pil:
+    state: unknown
+    evidence: 最新log-stock PIL public NotFound；b320平台页显示正确公共接口发布状态。
+    note: 未增加未知PAS/认证/固件启动调用；需要持久日志确认实际运行停点。
+    updated: '2026-10-31'
+  usb_speed_test:
+    state: partial
+    evidence: stock FS TEST仍不支持；b319以USB TEST和持久停点验证。
+    note: 不能把Unsupported视为成功执行FS枚举测试。
+    updated: '2026-10-31'
+  usb_manual_tpl:
+    state: partial
+    evidence: b229照片实测StartEx前后与poll1均TPL4；b230保留普通timer/应用服务。
+    note: 上下文差异已纠正且未消除重启，TPL8不是已确定的唯一根因；返回后的TPL仍待新日志。
+    updated: '2026-10-30'
+  usb_init_event:
+    state: partial
+    evidence: b228照片InitUsbController signal返回Success，但notify同时打印GPIO7。
+    note: 顺序保持ABL Create/Signal/Close后Locate/StartEx；SignalEvent返回值不能覆盖notify内部失败。
+    updated: '2026-10-30'
+  usb_standard_requests:
+    state: ok
+    evidence: b326原始日志已保留GET_DESCRIPTOR、SET_ADDRESS(2A/2B)、GET_STATUS和SET_CONFIGURATION(1)。
+    note: 标准控制请求/枚举已实机打通，保留native owner；不表示完整fastboot或其他类协议。
+    updated: '2026-10-31'
+  platform_info_abi:
+    state: ok
+    evidence: b222 USBPLAT rev30000查询Success，type=8/MTP，extension0，QRD-redriver=0。
+    note: b215安全scratch运行成功；原厂仅QRD=0B使用I2C11/addr1C的17项表，本机未满足条件。
+    updated: '2026-10-30'
+  usb_repeater_read_abi:
+    state: patched
+    updated: '2026-10-30'
+    evidence: b223真实C+ASan/UBSan：连续字节复制、短读/错误、host-force置位仍零写入，全部通过。
+    note: 最终FV含12/12字节报告，已撤after-phy/at-link重复写；等待b223实测。
+  usb_image_packaging:
+    state: ok
+    evidence: b327实际Android/FD/FV、12生产PE/map、7个compiled USB actions、256KiB reserved区和47输入验证通过。
+    note: 镜像SHA256 e728af81d5e8e775965cec10c00a6cdb642f28f1a5e97b48c11b8b739ae6186f；未git add/commit，已保存未提交备份。
+    updated: '2026-10-31'
+  usb_device_dispatch:
+    state: partial
+    evidence: b228已驻留/协议发布，照片无需Dispatch/LoadImage恢复。
+    note: b227恢复原厂SPMI AND SMEM后已有实测改善；b229保留有界恢复供接口缺失时诊断。
+    updated: '2026-10-30'
+  usb_stock_replay:
+    state: partial
+    evidence: b329 UsbStockReplayDxe沿用原厂Send/HandleEvent身份；仅扩大CDC TX分块容量。
+    note: 实际主机吞吐仍待实机；native DMA与队列顺序未改。
+    updated: '2026-11-01'
+  usb_application_poll:
+    state: partial
+    evidence: b229首次同步进入原生poll；b230最终PE及真实GUI等待函数测试通过。
+    note: 重入保护保持到清理/TPL检查完成；首四组边界日志，无周期alive，硬件尚未证实可持续运行。
+    updated: '2026-10-30'
+  usb_native_trace:
+    state: partial
+    evidence: b319启用原厂Empty/Take/Prepare/Update/Submit/Wait/Insert原语的staged SETUP。
+    note: 五组ARM64差分模型完整状态一致；前3次SETUP关键点持久保存，总checkpoint<=24，增加I/O时序开销。
+    updated: '2026-10-31'
+  readonly_storage:
+    state: partial
+    evidence: FILES/触控/OSK用户确认正常；logfs定界写入/读回已验证。
+    note: b324 ROFS43先于缓存/Pmic/UFS/FAT；其他公共写/擦保护保持。
+    updated: '2026-10-31'
+  file_browser:
+    state: ok
+    evidence: 用户确认 b318 文件浏览正常；b319 接受新版保护协议 Revision2。
+    note: 公共卷继续只读，RAW/ext4/F2FS/加密卷不提供 FAT 文件浏览。
+    updated: '2026-10-31'
+  touch_navigation:
+    state: partial
+    evidence: b329 BootMenu主界面仅GUI/Android/Recovery/UEFI Shell/更多，其余启动项进入“更多”并可返回；拖拽改为Top驱动，Selected始终夹在可见范围内；按键增加PageUp/PageDown翻页。
+    note: Android/Recovery优先选择已有命名匹配的Boot####；未从raw分区读取boot_a/boot_b。图标alpha与文本StringInfo改为每菜单缓存不再每帧分配。
+    updated: '2026-11-01'
+  osk:
+    state: ok
+    evidence: 用户确认 b318 松手输入和 OSK 正常。
+    note: b319 默认及 GUI/Shell 为100%宽、底部居中；新增尺寸的实机观感待确认。
+    updated: '2026-10-31'
+  logfs_partition:
+    state: ok
+    evidence: 既有logfs身份/主备GPT/FAT验证实机通过；实际分区8MiB、FAT卷5MiB。
+    note: 只允许已核验FAT内固定两日志文件写；尾3MiB和其他UFS分区禁止写，USB只导出5MiB只读快照。
+    updated: '2026-10-31'
+  persistent_log:
+    state: partial
+    evidence: 此前两槽跨重启读回已实测；b327新256KiB payload/512KiB文件界限、CRC/旋转/只读快照测试通过。
+    note: QR Log显示RAM日志，Refresh Log明确保存至logfs；LOGREAD保留。电脑slot decoder严格校验64K/256K两格式。新镜像持久回传待实机。
+    updated: '2026-10-31'
+  shell_layout:
+    state: partial
+    evidence: 4倍字体，单元24x48；左右96px、顶底160px；QueryMode与实际cursor/清屏一致。
+    note: 1440x3200为52x59；GUI可返回Boot Menu，Shell OSK满宽底部。实机布局待测。
+    updated: '2026-10-31'
+  chargerex_getters:
+    state: partial
+    evidence: b323 gate1；battery-present Success，source-connected先1后0。
+    note: voltage getter Success返回3500，但ADC Unsupported，保留来源未核实标记。
+    updated: '2026-10-31'
+  power_status:
+    state: partial
+    evidence: b321 power页面及每项getter可执行，检查点保存均Success；实际后端缺失已明确显示。
+    note: b322新增Health公开ProjectInfo查询，原厂/严格缓存结果分开记录。FILES/触控/OSK核心逻辑保留。
+    updated: '2026-10-31'
+  i2c_amp:
+    state: unknown
+    evidence: 原厂DT列出i2c@880000，承载cs35l43@40/@42。
+    note: 本轮未操作该控制器或功放；不把USB switch I2C成功当扬声器驱动成功。
+    updated: '2026-10-31'
+  lpass_tdm1:
+    state: todo
+    evidence: 原厂DT tdm1_clk/ws/din/dout使用GPIO121/123/122/124。
+    note: 缺少UEFI音频时钟、DMA、TDM和路由；不是WSA/SoundWire扬声器路径。
+    updated: '2026-10-31'
+  cs35l43_bottom:
+    state: todo
+    evidence: DT I2C地址0x40、reset GPIO85、IRQ GPIO98。
+    note: 本轮未进行功放/boost写入；音频输出后端尚未实现。
+    updated: '2026-10-31'
+  cs35l43_top:
+    state: todo
+    evidence: DT I2C地址0x42、reset GPIO111、IRQ GPIO99。
+    note: 本轮未进行功放/boost写入；音频输出后端尚未实现。
+    updated: '2026-10-31'
+  virtual_rtc:
+    state: partial
+    evidence: b321合法合成日历修复后，实际日志保存不再出现Invalid Parameter；生产RTC PE/map已审核。
+    note: 保留4125日历样本与真实FAT验证；合成日历用于合法时间戳，实际墙钟尚未实现。
+    updated: '2026-10-31'
+  charger_backend:
+    state: partial
+    evidence: b323 backend21BFB78B Success；battery-present Success value1。
+    note: 已取得getter实机进展；3500mV仍为未核实来源，电量/温度不可用。
+    updated: '2026-10-31'
+  project_info:
+    state: ok
+    evidence: b323 ProjectInfo查询Success，项目value1。
+    note: 原厂通知45→ADC/Pmic46实机有效，优先原厂getter，验证的ABL缓存补全。
+    updated: '2026-10-31'
+  project_info_cache:
+    state: ok
+    evidence: b323 retained SMEM135 chip557 valid1；包装安装，原厂Device Error回退verified ABL cache成功。
+    note: 板号回退不等于ADC测量恢复；247 OEM行/16 shennong行范围保护保留。
+    updated: '2026-10-31'
+  usb_stream_handoff:
+    state: ok
+    evidence: b325旧slot4退休、新slot8/CB8验证和Submit/Wait返回成功。
+    note: b326保持每次SETUP的DMA身份/归属检查，54场景及真实原厂连接回归通过。
+    updated: '2026-10-31'
+  usb_cable_lifecycle:
+    state: ok
+    evidence: b326初始化/测试/拔插返回且主机枚举成功。
+    note: b327模式切换必须Stop成功后释放DMA buffer；Stop失败锁切换并保留可能由DMA持有的内存。新模式长传输待实机。
+    updated: '2026-10-31'
+  usb_phy_clock:
+    state: partial
+    evidence: b325 Qs04，b326标准枚举成功；native PIPE/UTMI时序在真实ARM64验证。
+    note: 本轮不强制时钟重放；PHY有工作枚举路径，SS速率和独立状态仍待证据。
+    updated: '2026-10-31'
+  reboot_targets:
+    state: partial
+    evidence: b341 reboot 命令支持 system/bootloader/recovery 并在 ACK 传输完成后执行；实机未执行 reboot，目的地仍未验证。PMIC 原因码读回 Device Error 的问题保留。
+    note: 只在精确核验后用SPMI完好ReadLong/WriteLong设置SID0:7148一字节并读回，保留bit0；全局旧补丁不改，PSCI/目标待实机。窗口显示具体失败阶段。
+    updated: '2026-11-02'
+  usb_msc:
+    state: partial
+    evidence: VID18D1/PID4EE1，BPB扇区4096，RAM快照5MiB；READ/容量/BOT/恢复/写拒绝通过生产测试。
+    note: 没有UFS writer能力。Refresh logfs export重新保存并快照；Windows盘符/FAT读取待实机。
+    updated: '2026-10-31'
+  usb_cdc:
+    state: ok
+    evidence: b341 实机：COM20 配置、help、Shell echo、日志读取成功，174412 字节用时 1.495 秒。修复原厂 Usbfn 完成客户端缓冲后全局 EP0 标记被 bulk/notify 完成清除、导致重复 status 或错误 stall 的问题。
+    note: MSC/BOT读路径仍为64KiB分块；写路径和RAM盘受只读保护策略不变。
+    updated: '2026-11-02'
+  ram_disk:
+    state: partial
+    evidence: b328保留纯RAM/FAT32/本机只读；新增64-2048MiB HII string输入，默认512MiB；释放旧盘后才能改大小。
+    note: USB连接时取消本地发布，停USB后重新挂载Shell/FILES；无第二份快照，off/重启删除。六种容量的FAT几何与边界通过生产头文件测试。
+    updated: '2026-11-01'
+  log_refresh:
+    state: partial
+    evidence: QR Log改名，正下方Refresh Log保存当前RAM，成功/失败均有窗口反馈；实际菜单索引和编译IFR通过。
+    note: 单次手动保存，不周期刷盘；单文件不超512KiB，RAM日志256KiB。
+    updated: '2026-10-31'

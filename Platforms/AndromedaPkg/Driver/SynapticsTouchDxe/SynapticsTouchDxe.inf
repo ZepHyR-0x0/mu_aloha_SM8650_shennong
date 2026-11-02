@@ -1,0 +1,50 @@
+## @file
+#  Synaptics S3910P touch controller driver (GENI SPI + TCM + Absolute Pointer).
+#
+#  There is no SPI driver in this image to build on: SPIDxe publishes a stub
+#  whose three methods are "mov w0, #3 ; ret", and nothing else in the FV
+#  mentions SPI. So the GENI serial engine is programmed directly here.
+#
+#  Depex is TRUE and the driver never fails the boot: every stage prints its
+#  result and returns EFI_SUCCESS, so a half-working chain cannot stop the UI
+#  from coming up.
+##
+
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = SynapticsTouchDxe
+  FILE_GUID                      = 7C4E2B91-5D38-4A6F-9E2B-3C8D5A1F4E70
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = SynapticsTouchEntryPoint
+
+[Sources]
+  SynapticsTouchDxe.c
+  TouchGpio.c
+  RpmhVrm.c
+  Tcm.c
+  TouchHw.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  DxeServicesTableLib
+  MemoryAllocationLib
+  BaseMemoryLib
+  BaseLib
+  DebugLib
+  IoLib
+  TimerLib
+  SerialPortLib
+  PrintLib
+
+[Protocols]
+  gEfiAbsolutePointerProtocolGuid     ## PRODUCES
+
+[Depex]
+  TRUE

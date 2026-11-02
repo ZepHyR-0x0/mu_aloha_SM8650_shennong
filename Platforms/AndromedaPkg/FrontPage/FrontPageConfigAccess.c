@@ -81,7 +81,11 @@ GetFrontPageUiControls (
 
   // For Mu, our threat model is generally that of a vertically-integrated platform.
   // As such, our security lock for UI purposes can be ReadyToBoot.
+  ZeroMem(&FrontPageUiControls,sizeof(FrontPageUiControls));
   FrontPageUiControls.PostSecurityLocks = IsPostReadyToBoot ();
+  FpGetRamSizeText(FrontPageUiControls.RamMiB,sizeof(FrontPageUiControls.RamMiB));
+  FrontPageUiControls.UsbMode = FpGetUsbUiMode ();
+  FrontPageUiControls.RamAllocated = FpGetRamAllocated ();
 
   //
   // Convert buffer data to <ConfigResp> by helper function BlockToConfig()
@@ -198,5 +202,41 @@ RouteConfig (
   OUT EFI_STRING                            *Progress
   )
 {
-  return EFI_NOT_FOUND;
+  EFI_STATUS              Status;
+  FRONT_PAGE_UI_CONTROLS  FrontPageUiControls;
+  UINTN                   BufferSize;
+
+  if ((This == NULL) || (Configuration == NULL) || (Progress == NULL)) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  *Progress = Configuration;
+  if (!HiiIsConfigHdrMatch (Configuration, &gMuFrontPageConfigFormSetGuid, L"FrontPageUiControls")) {
+    return EFI_NOT_FOUND;
+  }
+
+  ZeroMem (&FrontPageUiControls, sizeof (FrontPageUiControls));
+  BufferSize = sizeof (FrontPageUiControls);
+  Status = mHiiConfigRouting->ConfigToBlock (
+                                mHiiConfigRouting,
+                                Configuration,
+                                (UINT8 *)&FrontPageUiControls,
+                                &BufferSize,
+                                Progress
+                                );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  // The HII string stores the user's requested RAM-disk size in MiB. Applying it
+  // immediately lets SelectMode enforce the "release old disk first" rule.
+  //
+  // A oneof (UsbMode) change can call RouteConfig with a ConfigResp that omits
+  // the string. Do not treat an empty string as failure: the browser would then
+  // reject the whole submission and the user could not switch USB function.
+  if (FrontPageUiControls.RamMiB[0] != L'\0') {
+    return FpRouteRamSize (FrontPageUiControls.RamMiB);
+  }
+
+  return EFI_SUCCESS;
 }

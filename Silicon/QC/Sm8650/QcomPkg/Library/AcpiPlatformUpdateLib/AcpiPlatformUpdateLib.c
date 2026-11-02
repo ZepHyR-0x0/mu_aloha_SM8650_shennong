@@ -16,6 +16,7 @@
 
 #include <Protocol/EFIChipInfo.h>
 #include <Protocol/EFIPlatformInfo.h>
+#include <Library/PlatformInfoCompat.h>
 #include <Protocol/EFISmem.h>
 
 VOID
@@ -49,7 +50,7 @@ PlatformUpdateAcpiTables(VOID)
   UINT32                              PRP0  = 0;
   UINT32                              PRP1  = 0;
   CHAR8                               SIDS[EFICHIPINFO_MAX_ID_LENGTH] = {0};
-  EFI_PLATFORMINFO_PLATFORM_INFO_TYPE PlatformInfo;
+  EFI_PLATFORMINFO_PLATFORM_INFO_TYPE PlatformInfo = {0};
   UINT32                              RMTB = 0;
   UINT32                              RMTX = 0;
   UINT32                              RFMB = 0;
@@ -102,7 +103,7 @@ PlatformUpdateAcpiTables(VOID)
 
   pEfiSmemProtocol->GetFunc(137, &SmemSize, (VOID **)&SOSI);
 
-  pEfiPlatformInfoProtocol->GetPlatformInfo(pEfiPlatformInfoProtocol, &PlatformInfo);
+  PlatformInfoGetSafe(pEfiPlatformInfoProtocol, &PlatformInfo, NULL);
 
   UINT16 SVMJ = (UINT16)((SIDV >> 16) & 0xFFFF);
   UINT16 SVMI = (UINT16)(SIDV & 0xFFFF);

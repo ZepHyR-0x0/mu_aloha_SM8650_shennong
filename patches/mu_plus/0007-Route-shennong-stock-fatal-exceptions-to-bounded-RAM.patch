@@ -1,0 +1,122 @@
+From 292108fda51efc52424ef74b26dd26a5ffdb9777 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Fri, 30 Oct 2026 19:50:15 +0800
+Subject: [PATCH 7/9] Route shennong stock fatal exceptions to bounded RAM
+ diagnostics
+
+---
+ ...moryProtectionExceptionHandlerLibAArch64.c | 22 +++++++++++++++++++
+ ...emoryProtectionExceptionHandlerLibCommon.c | 11 ++++++++++
+ 2 files changed, 33 insertions(+)
+
+diff --git a/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c b/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c
+index eb75681..44d997d 100644
+--- a/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c
++++ b/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c
+@@ -35,6 +35,16 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #define IS_TRANSLATION_FAULT(Cause)  ((Cause == 0x4) || (Cause == 0x5) || (Cause == 0x6) || (Cause == 0x7))
+ #define IS_ACCESS_FLAG_FAULT(Cause)  ((Cause == 0x9) || (Cause == 0xa) || (Cause == 0xb))
+ 
++#if defined (SHENNONG_USB_FAULT_TRACE) && SHENNONG_USB_FAULT_TRACE
++// Linked only into the Shennong stock ArmCpuDxe component. Preserve the normal
++// memory-protection registration; its fatal path must not access persistent
++// storage or chase fault-time image tables/stack pointers during USB bring-up.
++VOID EFIAPI ShennongStockExceptionDump (
++  IN EFI_EXCEPTION_TYPE Type,
++  IN EFI_SYSTEM_CONTEXT Context
++  );
++#endif
++
+ /**
+   Common constructor for this library.
+ 
+@@ -56,6 +66,7 @@ MemoryProtectionExceptionHandlerCommonConstructor (
+   IN  UINTN            StackCookieExVector
+   );
+ 
++#if !defined (SHENNONG_USB_FAULT_TRACE) || !SHENNONG_USB_FAULT_TRACE
+ /**
+   Use the EFI Debug Image Table to lookup the FaultAddress and find which PE/COFF image
+   it came from. As long as the PE/COFF image contains a debug directory entry a
+@@ -257,6 +268,8 @@ BaseName (
+ 
+ #endif
+ 
++#endif // legacy fault diagnostics
++
+ /**
+   This is the default action to take on an unexpected exception
+ 
+@@ -270,6 +283,9 @@ DefaultExceptionHandler (
+   IN OUT EFI_SYSTEM_CONTEXT  SystemContext
+   )
+ {
++#if defined (SHENNONG_USB_FAULT_TRACE) && SHENNONG_USB_FAULT_TRACE
++  ShennongStockExceptionDump (ExceptionType, SystemContext);
++#else
+   CHAR8  Buffer[256];
+   UINTN  CharCount;
+ 
+@@ -430,6 +446,7 @@ DefaultExceptionHandler (
+   (VOID)DescribeExceptionSyndrome;
+ 
+   CpuDeadLoop ();
++#endif
+ }
+ 
+ /**
+@@ -448,6 +465,10 @@ MemoryProtectionExceptionHandler (
+   IN EFI_SYSTEM_CONTEXT  SystemContext
+   )
+ {
++#if defined (SHENNONG_USB_FAULT_TRACE) && SHENNONG_USB_FAULT_TRACE
++  // Capture first, including translation faults, without ExPersist/RPMB writes.
++  ShennongStockExceptionDump (InterruptType, SystemContext);
++#else
+   UINT32  InterruptCause = 0;
+ 
+   // Isolate the first 8 bits of the ESR to get the interrupt cause
+@@ -473,6 +494,7 @@ MemoryProtectionExceptionHandler (
+     );
+ 
+   ResetWarm ();
++#endif
+ }
+ 
+ /**
+diff --git a/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibCommon.c b/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibCommon.c
+index b11751a..19672b8 100644
+--- a/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibCommon.c
++++ b/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibCommon.c
+@@ -25,6 +25,13 @@ STATIC EFI_HANDLE  mImageHandle         = NULL;
+ STATIC UINTN       mMemProtExVector     = 0;
+ STATIC UINTN       mStackCookieExVector = 1;
+ 
++#if defined (SHENNONG_USB_FAULT_TRACE) && SHENNONG_USB_FAULT_TRACE
++VOID EFIAPI ShennongStockExceptionDump (
++  IN EFI_EXCEPTION_TYPE Type,
++  IN EFI_SYSTEM_CONTEXT Context
++  );
++#endif
++
+ /**
+   Fault handler which logs exceptions in the platform specific early store and does a warm reset.
+ 
+@@ -58,10 +65,14 @@ MemoryProtectionStackCookieFailureHandler (
+   )
+ {
+   if (gDxeMps.StackCookies == TRUE) {
++#if defined (SHENNONG_USB_FAULT_TRACE) && SHENNONG_USB_FAULT_TRACE
++    ShennongStockExceptionDump (InterruptType, SystemContext);
++#else
+     DEBUG ((DEBUG_ERROR, "Stack Cookie Exception!\n"));
+     ExPersistClearExceptions ();
+     ExPersistSetException (ExceptionPersistStackCookie);
+     ResetWarm ();
++#endif
+   } else {
+     return;
+   }
+-- 
+2.43.0
+

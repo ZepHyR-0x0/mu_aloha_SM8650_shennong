@@ -27,6 +27,10 @@
   FLASH_DEFINITION               = $(PACKAGE_NAME)/$(PLATFORM_NAME).fdf
   SECURE_BOOT                    = 1
   USE_PHYSICAL_TIMER             = 0
+!ifndef USB_STOCK_CHAIN
+  DEFINE USB_STOCK_CHAIN = 0
+!endif
+  DEFINE SHENNONG_USB_FAULT_TRACE = $(USB_STOCK_CHAIN)
 
   USE_SCREEN_FOR_SERIAL_OUTPUT    = 1  # DEBUG: framebuffer console
   USE_UART_GENI_FOR_SERIAL_OUTPUT = 0
@@ -93,3 +97,14 @@
 !include $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/PcdsFixedAtBuild.dsc.inc
 !include AndromedaPkg/Andromeda.dsc.inc
 !include AndromedaPkg/Frontpage.dsc.inc
+
+[BuildOptions]
+  *_*_*_CC_FLAGS = -DSHENNONG_TOUCH_GESTURES=1
+
+!if $(SHENNONG_USB_FAULT_TRACE) == 1
+[BuildOptions]
+  # Component CC_FLAGS do not propagate to library dependencies. This flag is
+  # consumed only by the memory-protection NULL library linked into ArmCpuDxe.
+  *_*_*_CC_FLAGS = -DSHENNONG_USB_FAULT_TRACE=1
+!endif
+

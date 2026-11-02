@@ -1,9 +1,9 @@
 ## @file
 #  UsbDevStartDxe - start the DWC3 peripheral controller.
 #
-#  Nothing in the stack calls StartController/StartDevice, so DCTL.RUN_STOP stays
-#  0 and no host can see the device. This driver builds a minimal descriptor set
-#  and calls EFI_USB_DEVICE_PROTOCOL.Start.
+#  Source USB2 direct mode provides descriptors and configuration replies.
+#  Hardware event/EP0 DMA is enabled by the GUI manual test; a legacy vendor
+#  protocol start path remains available behind the build-time mode switch.
 #
 #  Copyright (c) 2026, ProjectMu shennong port.
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -19,6 +19,7 @@
 
 [Sources]
   UsbDevStartDxe.c
+  ../../Library/WcdUsbLib/WcdUsbLib.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -33,13 +34,32 @@
   BaseMemoryLib
   PrintLib
   SerialPortLib
+  DxeServicesTableLib
+  IoLib
+  TimerLib
   DebugLib
 
 [Protocols]
   gEfiUsbDeviceProtocolGuid                     ## CONSUMES
+  gEfiUsbFunctionIoProtocolGuid                 ## CONSUMES
+
+[Guids]
+  gEfiEventExitBootServicesGuid
 
 [Depex]
   #
-  # UsbDeviceDxe publishes this; there is nothing to start before it exists.
+  # UsbDeviceDxe publishes UsbDevice; UsbfnDwc3Dxe publishes UsbfnIo.
   #
-  gEfiUsbDeviceProtocolGuid
+  # Waiting only on UsbDevice was not enough. This driver is an APRIORI entry, so
+  # the dispatcher starts it the moment its DEPEX is satisfied - and UsbDevice
+  # appears before UsbfnIo does. Every boot therefore ran the start sequence with
+  # the function protocol still missing:
+  #
+  #   UsbDeviceOpenProtocols: Failed to locate USB FN IO protocol: Not Found
+  #   [USBSTART] StartEx -> Not Found
+  #   [USBSTART] Start   -> Not Found
+  #
+  # and BDS then reported "UsbfnIo present" a moment later, which is what made it
+  # look like a USB fault rather than an ordering one.
+  #
+  gEfiUsbFunctionIoProtocolGuid

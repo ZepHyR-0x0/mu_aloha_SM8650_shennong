@@ -1,0 +1,150 @@
+From e42da899dffa461e22494e67eeec19e6f2afc9c0 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Fri, 30 Oct 2026 17:10:34 +0800
+Subject: [PATCH 6/9] Service cooperative application events while waiting in
+ the GUI
+
+---
+ .../Protocol/ApplicationEventService.h        | 25 ++++++++++++
+ MsGraphicsPkg/MsGraphicsPkg.dec               |  1 +
+ .../SimpleWindowManagerDxe.inf                |  1 +
+ .../SimpleWindowManagerDxe/WaitForEvent.c     | 40 +++++++++++++++++--
+ 4 files changed, 63 insertions(+), 4 deletions(-)
+ create mode 100644 MsGraphicsPkg/Include/Protocol/ApplicationEventService.h
+
+diff --git a/MsGraphicsPkg/Include/Protocol/ApplicationEventService.h b/MsGraphicsPkg/Include/Protocol/ApplicationEventService.h
+new file mode 100644
+index 0000000..59688b0
+--- /dev/null
++++ b/MsGraphicsPkg/Include/Protocol/ApplicationEventService.h
+@@ -0,0 +1,25 @@
++/** @file
++  Optional cooperative service for clients waiting in the GUI application loop.
++  SPDX-License-Identifier: BSD-2-Clause-Patent
++**/
++#ifndef APPLICATION_EVENT_SERVICE_H_
++#define APPLICATION_EVENT_SERVICE_H_
++
++#include <Uefi.h>
++
++#define APPLICATION_EVENT_SERVICE_PROTOCOL_GUID \
++  { 0x66b8aa42, 0x67c9, 0x4d8a, { 0xa8, 0x54, 0x5e, 0x52, 0xad, 0x36, 0xb9, 0x07 } }
++
++typedef struct _APPLICATION_EVENT_SERVICE_PROTOCOL APPLICATION_EVENT_SERVICE_PROTOCOL;
++struct _APPLICATION_EVENT_SERVICE_PROTOCOL {
++  UINT64     Revision;
++  // Provider-owned, waitable event (no EVT_NOTIFY_SIGNAL). NULL disables service.
++  // Provider must remain resident and update WakeEvent before closing the event.
++  EFI_EVENT  WakeEvent;
++  // Called only at TPL_APPLICATION after WaitForEvent returns. Must be bounded
++  // and reject reentry. Consumers never close the event or unload the provider.
++  EFI_STATUS (EFIAPI *Service)(IN APPLICATION_EVENT_SERVICE_PROTOCOL *This);
++};
++
++extern EFI_GUID gApplicationEventServiceProtocolGuid;
++#endif
+diff --git a/MsGraphicsPkg/MsGraphicsPkg.dec b/MsGraphicsPkg/MsGraphicsPkg.dec
+index b70659d..5f06444 100644
+--- a/MsGraphicsPkg/MsGraphicsPkg.dec
++++ b/MsGraphicsPkg/MsGraphicsPkg.dec
+@@ -99,6 +99,7 @@
+   gMsUiThemePpiGuid = { 0x74367a5b, 0x27fb, 0x45e2, {0xa5, 0x92, 0x01, 0x7b, 0x63, 0x03, 0x9d, 0x51 }}
+ 
+ [Protocols]
++  gApplicationEventServiceProtocolGuid = { 0x66b8aa42, 0x67c9, 0x4d8a, { 0xa8, 0x54, 0x5e, 0x52, 0xad, 0x36, 0xb9, 0x07 } }
+   ## On-Screen Keyboard protocol guid
+   #
+   gMsOSKProtocolGuid = { 0x3c4ca20d, 0xc95a, 0x4b8b, { 0x81, 0xaf, 0x94, 0xa9, 0x83, 0x09, 0x23, 0xe2 }}
+diff --git a/MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf b/MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf
+index 6026fe7..96d928b 100644
+--- a/MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf
++++ b/MsGraphicsPkg/SimpleWindowManagerDxe/SimpleWindowManagerDxe.inf
+@@ -50,6 +50,7 @@
+   gMsTouchPanelGuid
+ 
+ [Protocols]
++  gApplicationEventServiceProtocolGuid # CONSUMES
+   gEfiGraphicsOutputProtocolGuid    # CONSUMES
+   gEfiAbsolutePointerProtocolGuid   # CONSUMES
+   gEfiDevicePathProtocolGuid        # CONSUMES
+diff --git a/MsGraphicsPkg/SimpleWindowManagerDxe/WaitForEvent.c b/MsGraphicsPkg/SimpleWindowManagerDxe/WaitForEvent.c
+index fec57a1..8bfb7c1 100644
+--- a/MsGraphicsPkg/SimpleWindowManagerDxe/WaitForEvent.c
++++ b/MsGraphicsPkg/SimpleWindowManagerDxe/WaitForEvent.c
+@@ -8,6 +8,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ **/
+ 
+ #include "WindowManager.h"
++#include <Protocol/ApplicationEventService.h>
+ 
+ UINTN      mResidualTimeout    = 0;
+ EFI_EVENT  mPowerOffTimerEvent = NULL;
+@@ -73,11 +74,14 @@ WaitForEventInternal (
+   CHAR16         *PowerBody;
+   CHAR16         *PowerCaption;
+   SWM_MB_RESULT  SwmResult;
++  APPLICATION_EVENT_SERVICE_PROTOCOL  *Service;
++  UINTN                               ServiceIndex;
+ 
+   // Validate caller parameters - leave space in the wait list for the
+   // form refresh and time-out timer events.
+   //
+-  if (NumberOfEvents > (MAX_SWM_WAIT_EVENTS - 2)) {
++  if ((NumberOfEvents == 0) || (Events == NULL) || (Index == NULL) ||
++      (NumberOfEvents > (MAX_SWM_WAIT_EVENTS - 2))) {
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+@@ -142,10 +146,36 @@ WaitForEventInternal (
+     WaitList[EventNum] = mPowerOffTimerEvent;
+     EventNum++;
+ 
+-    Status = gBS->WaitForEvent (EventNum, WaitList, Index);
++    // A plain timer wakes WaitForEvent; service runs here at application TPL,
++    // never inside a timer notification. Keep the existing power/refresh timer
++    // armed across internal wakes so USB cannot extend the user's timeout.
++    Service = NULL;
++    ServiceIndex = EventNum;
++    if (!EFI_ERROR (gBS->LocateProtocol (&gApplicationEventServiceProtocolGuid,
++                                         NULL, (VOID **)&Service)) &&
++        (Service != NULL) && (Service->Revision == 1) &&
++        (Service->WakeEvent != NULL) && (Service->Service != NULL)) {
++      WaitList[EventNum++] = Service->WakeEvent;
++    }
++
++    do {
++      Status = gBS->WaitForEvent (EventNum, WaitList, Index);
++      if (EFI_ERROR (Status) || (*Index != ServiceIndex) ||
++          (ServiceIndex == EventNum)) {
++        break;
++      }
++      Service->Service (Service);
++      // Provider may stop/close its wake event on error. Remove the old handle
++      // before the next wait; the original caller and timer indices stay intact.
++      if (Service->WakeEvent == NULL) {
++        EventNum = ServiceIndex;
++      } else {
++        WaitList[ServiceIndex] = Service->WakeEvent;
++      }
++    } while (TRUE);
+ 
+     if (!EFI_ERROR (Status)) {
+-      if (*Index == (EventNum - 1)) {
++      if (*Index == NumberOfEvents) {
+         // Power Off timer or User Timer
+         if (mResidualTimeout == 0) {
+           // Power Off timer
+@@ -185,7 +215,9 @@ WaitForEventInternal (
+     }
+   } while (Restart);
+ 
+-  *Index = MIN (*Index, NumberOfEvents);   // Normalize Index to events passed in.
++  if (!EFI_ERROR (Status)) {
++    *Index = MIN (*Index, NumberOfEvents);   // Normalize Index to events passed in.
++  }
+ Exit:
+   return Status;
+ }
+-- 
+2.43.0
+

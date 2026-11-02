@@ -1,0 +1,85 @@
+From 1fe23154c51f4925bf06ab5cc9c481490e579861 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Sun, 25 Oct 2026 22:13:38 +0800
+Subject: [PATCH 4/9] Print the return address in the exception dump, so a null
+ call names its caller
+
+The crash after TzDxeLA starts is:
+
+  Synchronous Exception
+  ELR =0x0000000000000000
+  ESR =0x0000000082000007  EC=0x21 IL=1 ISS=0x000007
+  IMG =0x0000000000000000 +0x00000000 (unknown image)
+
+ELR zero means the CPU tried to fetch an instruction at 0, which is a call
+through a null function pointer. The dump then has nothing to say, because it
+maps ELR to an image and ELR is not in one.
+
+LR holds the return address of that call, so it points into the module that made
+it. Printed alongside FP, and resolved through the same image table as ELR:
+
+  CALLER =0x... +0x...  <module>.pdb
+
+For a null call this turns "unknown image" into a named module and an offset.
+
+Co-Authored-By: WorkBuddy <noreply@workbuddy.ai>
+---
+ ...moryProtectionExceptionHandlerLibAArch64.c | 28 +++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c b/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c
+index 2032cd4..72f35a2 100644
+--- a/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c
++++ b/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c
+@@ -293,6 +293,7 @@ DefaultExceptionHandler (
+                 "  ESR =0x%016lx  EC=0x%02x IL=%d ISS=0x%06x\n"
+                 "  FAR =0x%016lx\n"
+                 "  SP  =0x%016lx\n"
++                "  LR  =0x%016lx  FP=0x%016lx\n"
+                 "  SPSR=0x%016lx\n",
+                 gExceptionTypeString[ExceptionType],
+                 SystemContext.SystemContextAArch64->ELR,
+@@ -302,6 +303,8 @@ DefaultExceptionHandler (
+                 (UINT32)(SystemContext.SystemContextAArch64->ESR & 0x1FFFFFF),
+                 SystemContext.SystemContextAArch64->FAR,
+                 SystemContext.SystemContextAArch64->SP,
++                SystemContext.SystemContextAArch64->LR,
++                SystemContext.SystemContextAArch64->FP,
+                 SystemContext.SystemContextAArch64->SPSR
+                 );
+   SerialPortWrite ((UINT8 *)Buffer, CharCount);
+@@ -328,6 +331,31 @@ DefaultExceptionHandler (
+             (Pdb != NULL) ? BaseName (Pdb) : "(unknown image)"
+             );
+     SerialPortWrite ((UINT8 *)B2, L2);
++
++    //
++    // ELR names the faulting image only when the fault is inside code. A call
++    // through a null function pointer leaves ELR at 0 and the report says
++    // "(unknown image)", which is useless - and that is exactly the shape of the
++    // crash after TzDxeLA starts. LR is the return address of the call, so it
++    // points into whichever module made it.
++    //
++    if (SystemContext.SystemContextAArch64->LR != 0) {
++      ImageBase    = 0;
++      SizeOfHeader = 0;
++      Pdb          = GetImageName (SystemContext.SystemContextAArch64->LR,
++                                   &ImageBase, &SizeOfHeader);
++      L2 = AsciiSPrint (
++             B2,
++             sizeof (B2),
++             "  CALLER =0x%016lx +0x%08x  %a\n",
++             (UINT64)ImageBase,
++             (Pdb != NULL) ? (UINT32)(SystemContext.SystemContextAArch64->LR - ImageBase) : 0,
++             (Pdb != NULL) ? BaseName (Pdb) : "(not in a known image)"
++             );
++      SerialPortWrite ((UINT8 *)B2, L2);
++    } else {
++      SerialPortWrite ((UINT8 *)"  CALLER =0 (no return address)\n", 33);
++    }
+   }
+ 
+   // DescribeExceptionSyndrome is only reachable from the DEBUG_CODE dump, which
+-- 
+2.43.0
+

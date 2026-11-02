@@ -1,0 +1,1179 @@
+meta:
+  title: Shennong (SM8650) UEFI 打通设备树
+  subtitle: b326 USB标准枚举成功 · b329 两级BootMenu/触摸滚动修正 · b328 CDC Shell / 可变RAM盘 · 待实机
+  platform: SM8650 / pineapple
+  updated: '2026-11-01'
+groups:
+- id: core
+  label: 平台核心
+  color: '#58a6ff'
+- id: clock
+  label: 时钟/总线
+  color: '#79c0ff'
+- id: storage
+  label: 存储
+  color: '#56d364'
+- id: usb
+  label: USB
+  color: '#bc8cff'
+- id: display
+  label: 显示
+  color: '#ffa657'
+- id: input
+  label: 输入
+  color: '#f778ba'
+- id: power
+  label: 电源
+  color: '#d29922'
+- id: security
+  label: 安全
+  color: '#ff7b72'
+- id: audio
+  label: 音频
+  color: '#7ee787'
+- id: connectivity
+  label: 连接
+  color: '#a5d6ff'
+- id: other
+  label: 其它
+  color: '#8b949e'
+nodes:
+- id: dxe_core
+  name: DXE Core
+  group: core
+  driver: DxeCore
+  notes: b228 FS日志log574有原厂UsbDevice入口，log849协议存在；USB TEST照片显示RESIDENT/handles1。 恢复原厂DEPEX后已观察到发布；本次照片未走b228恢复加载分支。用户报告StartEx之后重启，确切异常未捕获。
+- id: chipinfo
+  name: ChipInfo 芯片信息
+  group: core
+  driver: ChipInfo
+  deps:
+  - dxe_core
+  notes: 多数 QC 驱动通过 ChipInfo 协议判断平台版本。
+- id: hwio
+  name: HWIO 地址映射
+  group: core
+  driver: HWIODxeDriver
+  deps:
+  - chipinfo
+  notes: HWIO 名→地址表由 DALSYSDxe.efi 提供，已用 HWIODALDxeDump.py 核对。
+- id: dalsys
+  name: DAL 运行时
+  group: core
+  driver: DALSys
+  deps:
+  - hwio
+  - chipinfo
+- id: smem
+  name: SMEM 共享内存
+  group: core
+  driver: SmemDxe
+  deps:
+  - dalsys
+- id: ipcc
+  name: IPCC 邮箱
+  group: core
+  base: 4218880
+  size: 4096
+  driver: IPCCDxe
+  deps:
+  - hwio
+  dt_path: /soc/qcom,ipcc@406000
+  compatible: qcom,ipcc
+- id: glink
+  name: GLINK IPC
+  group: core
+  driver: GlinkDxe
+  deps:
+  - smem
+  - ipcc
+  patch:
+    kind: config
+    ref: Binaries/QcomPkg/Drivers/GLinkDxe/GLinkDxe.depex（b164 提交 79a78d2d）
+    delta: 18 B（PUSH GUID + END）→ 2 B（TRUE + END）
+    enabled: true
+    note: DEPEX 强制 TRUE，GLinkDxe 不再等一个没人发布的协议。
+  notes: 本地GLINK发布有记录，当前没有远端/QMI成功证据。 不将本地协议存在当作远端服务就绪。
+- id: gic
+  name: GICv3 中断控制器
+  group: core
+  base: 386924544
+  size: 65536
+  irq: []
+  driver: ArmGicDxe
+  deps:
+  - dxe_core
+  dt_path: /soc/interrupt-controller@17100000
+  compatible: arm,gic-v3
+  notes: GICD 区间；GICR 在 0x17180000。
+- id: timer
+  name: ARM 架构定时器
+  group: core
+  base: 390201344
+  size: 4096
+  driver: ArmTimerDxe
+  deps:
+  - gic
+  dt_path: /soc/timer@17420000
+  compatible: arm,armv7-timer-mem
+- id: tlmm
+  name: TLMM 引脚复用
+  group: core
+  base: 251658240
+  size: 16777216
+  driver: DALTLMM
+  deps:
+  - hwio
+  - chipinfo
+  dt_path: /soc/pinctrl@f000000
+  compatible: qcom,pineapple-pinctrl
+  notes: TouchProbeDxe 读 TLMM 会重启，排查时不要直接读。
+- id: aoss
+  name: AOSS MMIO 窗口
+  group: core
+  base: 184549376
+  size: 83886080
+  driver: PlatformMemoryMapLib
+  no_overlap: true
+  notes: 'b123 GCD：AOSS @0xB000000 in [0xB000000+0x5000000] type=mmio attr=4001，
+
+    旧版「AOSS nonexistent / 外层被拒」不再出现。大区间包含 TLMM/SPMI，
+
+    属于容器区间，已标记 no_overlap。
+
+    '
+  tags:
+  - gcd
+  - memmap
+- id: rpmh
+  name: RPMh RSC
+  group: clock
+  base: 396361728
+  size: 196608
+  driver: RpmhDxe
+  deps:
+  - hwio
+  - ipcc
+  dt_path: /soc/rsc@17a00000
+  compatible: qcom,rpmh-rsc
+- id: gcc
+  name: GCC 时钟控制器
+  group: clock
+  base: 1048576
+  size: 2048512
+  driver: ClockDxe
+  deps:
+  - rpmh
+  - tlmm
+  soft_deps:
+  - npa
+  dt_path: /soc/clock-controller@100000
+  compatible: qcom,pineapple-gcc
+  patch:
+    kind: binary
+    ref: Silicon/QC/Sm8650/QcomPkg/PatchedBinaries/ClockDxe.efi
+    delta: 4 bytes @0xA810（.bak 为 stock）
+    enabled: true
+    note: 与 stock ClockDxe 差 4 字节；DXE.inc 中已启用。
+  notes: I2C/GENI 时钟可用（[TP] clock by name -> Success）；NPA 仍是软依赖。
+- id: icb
+  name: ICB 总线仲裁
+  group: clock
+  base: 23068672
+  size: 25088
+  driver: ICBDxe
+  deps:
+  - gcc
+  dt_path: /soc/interconnect@1600000
+  compatible: qcom,pineapple-cnoc_cfg
+- id: npa
+  name: NPA 节点电源
+  group: clock
+  driver: NpaDxe
+  deps:
+  - chipinfo
+  notes: NpaDxe接口已发布；USB arbiter客户端投票历史测试异常。 发布接口不等于客户端能工作。
+- id: ufs_phy
+  name: UFS PHY
+  group: storage
+  base: 30932992
+  size: 8192
+  driver: UfsPhy
+  deps:
+  - gcc
+  - rpmh
+  dt_path: /soc/ufsphy_mem@1d80000
+  compatible: qcom,ufs-phy-qmp-v4-pineapple
+- id: ufs_ice
+  name: UFS 内联加密 ICE
+  group: storage
+  base: 30965760
+  size: 32768
+  driver: UfsIce
+  deps:
+  - gcc
+  dt_path: /soc/ufshc@1d84000
+- id: ufs
+  name: UFS 主机控制器
+  group: storage
+  base: 30949376
+  size: 12288
+  driver: UfsDxe
+  deps:
+  - ufs_phy
+  - tlmm
+  - gcc
+  dt_path: /soc/ufshc@1d84000
+  compatible: qcom,ufshc
+  patch:
+    kind: binary
+    ref: IsolatedBinaries/UFSDxe.efi
+    delta: 143,360 B（stock 151,552 B，DEBUG_CLANG160LINUX）
+    enabled: true
+    note: 来源为外部调试镜像，风险与回退见 IsolatedBinaries/README.md。
+  notes: GCD 中 UFS_MEM/UFS_ICE 均为 mmio；日志 HCS=0x10F、FAT 分区可读。
+  soft_deps:
+  - smmu
+  - icb
+- id: usb_config
+  name: UsbConfigDxe（原厂，已编入）
+  group: usb
+  driver: UsbConfigDxe（PatchedBinaries）
+  deps:
+  - pmic_arb
+  - tlmm
+  - ipcc
+  patch:
+    kind: stock
+    ref: Binaries/QcomPkg/Drivers/UsbConfigDxe
+    enabled: true
+    note: 原厂PE/DEPEX不变；b326核验allocated core0 +8回调，测试结束恢复；GPIO0x7仍未证明修复。
+  notes: 实际b327的UsbConfigDxe与本机提取原厂相同；wrapper两次repeater核验/四次WCD更新在PE中仍在。 USB标准枚举成功不能等价于每个PHY/routing条件都已单独证明。
+- id: usb_tcsr
+  name: USB TCSR 动态使能
+  group: usb
+  base: 33316864
+  size: 4
+  driver: UsbConfigDxe
+  deps:
+  - tlmm
+  dt_path: /soc/ssusb@a600000
+  notes: 'b196: usb_int_dyn_en_dis=F，interface gate Success。 '
+- id: usb_eud
+  name: EUD 调试口
+  group: usb
+  base: 143523840
+  size: 8192
+  driver: UsbEudDxe
+  deps:
+  - tlmm
+  dt_path: /soc/qcom,msm-eud@88e0000
+  compatible: qcom,msm-eud
+- id: usb_hsphy
+  name: eUSB2 高速 PHY
+  group: usb
+  base: 143536128
+  size: 340
+  driver: UsbConfigDxe 8780/E25C / b326 repeater boundary
+  deps:
+  - gcc
+  - rpmh
+  - tlmm
+  - usb_refclk
+  dt_path: /soc/hsphy@88e3000
+  compatible: qcom,usb-snps-eusb2-phy
+  notes: 真实原厂8780/E25C的HS PHY写序列和PIPE/UTMI分支在ARM64执行中验证；外部GPIO/clock仍模拟。 b326在native HS init前确认repeater；本机电气状态仍待USBBOARD/USBRPTR和host枚举。
+- id: usb_ssphy
+  name: QMP 超速 PHY
+  group: usb
+  base: 143556608
+  size: 12288
+  driver: UsbConfigDxe / UsbDevStartDxe
+  deps:
+  - gcc
+  - rpmh
+  - usb_config
+  dt_path: /soc/ssphy@88e8000
+  compatible: qcom,usb-ssphy-qmp-dp-combo
+  notes: b225 log1054 ssusb_phy_init_success lane1。 初始化字符串不证明USB3链接或枚举成功。
+- id: usb_dwc3
+  name: DWC3 USB 控制器
+  group: usb
+  base: 174063616
+  size: 2097152
+  irq:
+  - 130
+  - 14
+  - 15
+  - 17
+  driver: UsbfnDwc3Dxe (stock)
+  deps:
+  - usb_hsphy
+  - usb_tcsr
+  - usb_refclk
+  - usb_noc
+  - usb_smmu
+  - gcc
+  - tlmm
+  soft_deps:
+  - usb_eud
+  - usb_config
+  dt_path: /soc/ssusb@a600000
+  compatible: qcom,dwc-usb3-msm
+  patch:
+    kind: stock
+    ref: Binaries/QcomPkg/Drivers/UsbfnDwc3Dxe
+    enabled: true
+    note: 与原厂PE/DEPEX逐字节一致；自研owner从stock FV排除。
+  notes: 原厂9CEC/9CF0→91A4/91BC明确PAR1低32位、PAR0高32位；真实ARM64模型验证TRB地址0x20010000。 旧b314探针实际提交Phys<<32。正常/忙超时模型通过，真实MMU/DMA/PHY/复位仍未验证。
+- id: usb_xhci
+  name: XHCI 主机栈
+  group: usb
+  driver: XhciDxe / UsbBusDxe
+  deps:
+  - usb_dwc3
+  notes: 模块已编入，但 b123 日志没有主机枚举/设备接入证据。
+- id: usb_tcpm
+  name: Type-C / UCSI
+  group: usb
+  driver: UCDxe（FILE DRIVER 方式编入）
+  deps:
+  - usb_dwc3
+  - usb_config
+  soft_deps:
+  - pmic_glink
+  notes: 历史本地TypeC/VBUS查询Success；b225原厂报告Attach/UFP/CC2。 本地PMIC USB查询与远端PMIC GLINK分开；完整PD/UCSI未验证。
+- id: usb_hid
+  name: HID 键盘/鼠标
+  group: usb
+  driver: UsbKbDxe
+  deps:
+  - usb_xhci
+  notes: 依赖主机模式；b123 没有 USB 键盘/鼠标枚举记录。
+- id: usb_device
+  name: USB Device / 下载模式
+  group: usb
+  driver: UsbDeviceDxe + UsbStockReplayDxe
+  deps:
+  - usb_dwc3
+  - usb_repeater
+  - usb_standard_requests
+  patch:
+    kind: stock
+    ref: Binaries/QcomPkg/Drivers/UsbDeviceDxe
+    enabled: true
+    note: 原厂UsbDeviceDxe PE/DEPEX身份保持；b326枚举成功，b327类客户端使用native StartEx/Send/HandleEvent。
+  notes: b326用户确认UEFI电脑端18D1:D00D/Android Bootloader Interface OK/err0，日志有SET_ADDRESS和SET_CONFIGURATION(1)。 标准枚举已实机打通；vendor描述符没有fastboot命令引擎。b327新增的类协议还需实机。
+  soft_deps:
+  - usb_tcpm
+  - usb_config
+  - glink
+  - usb_cable_lifecycle
+  - usb_phy_clock
+  - wcd939x
+- id: dispcc
+  name: DISPCC 显示时钟
+  group: display
+  base: 183500800
+  size: 131072
+  driver: ClockDxe
+  deps:
+  - gcc
+  - rpmh
+  dt_path: /soc/clock-controller@af00000
+  compatible: qcom,pineapple-dispcc
+  notes: UEFI 不接管，DISPCC 由 ABL 预设。
+- id: mdss
+  name: MDSS / MDP 显示控制器
+  group: display
+  base: 182452224
+  size: 589824
+  driver: MdssDxe
+  deps:
+  - dispcc
+  - gcc
+  - icb
+  - smmu
+  dt_path: /soc/qcom,mdss_mdp@ae00000
+  compatible: qcom,mdss_mdp
+  notes: DisplayDxe/MDSS 未启用，UEFI 直接沿用 ABL 帧缓冲。
+- id: dsi0
+  name: DSI0 显示链路
+  group: display
+  base: 183058432
+  size: 4096
+  driver: DsiDxe
+  deps:
+  - mdss
+  - dispcc
+  dt_path: /soc/qcom,mdss_dsi_ctrl0@ae94000
+  compatible: qcom,dsi-ctrl-hw-v2.8
+  notes: UEFI 不做 DSI 重初始化。
+- id: panel
+  name: 面板与背光
+  group: display
+  driver: —（ABL 点亮）
+  deps:
+  - dsi0
+  - tlmm
+  notes: AMOLED 亮度走 DCS（init 0x133 / max 0xFFF）；UEFI 无运行时亮度控制。
+- id: disp_console
+  name: 图形控制台 (SimpleFb)
+  group: display
+  driver: SimpleFbDxe
+  deps:
+  - panel
+  notes: DisplayDxe/DisplayCallerDxe 均被禁用；SimpleFb 只安装 GOP，亮度固定。
+- id: gpi
+  name: GPI DMA
+  group: input
+  base: 10485760
+  size: 393216
+  driver: GpiDxe
+  deps:
+  - tlmm
+  - icb
+  dt_path: /soc/qcom,gpi-dma@a00000
+  compatible: qcom,gpi-dma
+  notes: GpiDxe 已编入；PIL 0x2000205 返回 0xFFCFFFB9；触摸链路不使用 GPI。
+- id: geni1
+  name: QUPv3_1 Geni SE
+  group: input
+  base: 11272192
+  size: 8192
+  driver: I2CDxe / SynapticsTouchDxe
+  deps:
+  - gcc
+  - icb
+  dt_path: /soc/qcom,qupv3_1_geni_se@ac0000
+  compatible: qcom,geni-se-qup
+- id: spi_touch
+  name: SPI SE4 (触摸)
+  group: input
+  base: 11075584
+  size: 16384
+  driver: TouchGpio.c GPIO SPI
+  deps:
+  - geni1
+  - tlmm
+  dt_path: /soc/qcom,qupv3_1_geni_se@ac0000/spi@a90000
+  compatible: qcom,geni-spi
+  patch:
+    kind: source
+    ref: AndromedaPkg/Driver/SynapticsTouchDxe/TouchGpio.c
+    enabled: true
+    note: GPIO位翻转SPI + TCM，不使用GENI/GPI DMA。
+  notes: TouchGpio.c GPIO位翻转SPI读取TCM；b196帧和坐标正常。 不使用GENI/GPI DMA，不能据此证明GPI工作。
+- id: touch
+  name: Synaptics TCM 触摸
+  group: input
+  driver: SynapticsTouchDxe
+  deps:
+  - spi_touch
+  - tlmm
+  dt_path: /soc/qcom,qupv3_1_geni_se@ac0000/spi@a90000/synaptics_tcm@0
+  compatible: synaptics,tcm-spi
+  patch:
+    kind: source
+    ref: AndromedaPkg/Driver/SynapticsTouchDxe
+    enabled: true
+    note: 自研 TCM 驱动，发布 Absolute Pointer。
+  notes: b329 FrontPage/FileBrowser手势沿用b318；BootMenu增加Top驱动拖拽滚动与页翻键。 滚动手感与FileBrowser一致；重复点击不再重复堆分配。
+- id: buttons
+  name: ButtonsDxe（电源键→Enter）
+  group: input
+  driver: ButtonsDxe（PatchedBinaries）
+  deps:
+  - tlmm
+  patch:
+    kind: binary
+    ref: Platforms/ShennongPkg/Device/xiaomi-shennong/PatchedBinaries/ButtonsDxe.efi
+    delta: 3 bytes @0x3CC0（.bak 为 stock）
+    enabled: true
+    note: 走控制台 ConIn（KeypadDevicePath），判据 UnicodeChar == 0x0D。
+  notes: 独立 GpioButtons 驱动未编入，按键映射就在这个补丁二进制里。
+- id: pmic_arb
+  name: SPMI PMIC Arbiter
+  group: power
+  base: 205705216
+  size: 16384
+  driver: SpmiDxe
+  deps:
+  - tlmm
+  dt_path: /soc/qcom,spmi@c42d000
+  compatible: qcom,spmi-pmic-arb
+  patch:
+    kind: binary
+    ref: Silicon/QC/Sm8650/QcomPkg/PatchedBinaries/SPMIDxe.efi
+    delta: 8 bytes @0x154C（.bak 为 stock）
+    enabled: true
+    note: DXE.inc 中使用 PatchedBinaries/SPMIDxe.inf。
+  notes: 充电端口查询 rc=0 raw=0x1（SDP），SPMI 通路可用；AOSS 已映射。
+- id: pmic
+  name: PmicDxeLa（重建版）
+  group: power
+  driver: PmicDxeLa
+  deps:
+  - pmic_arb
+  - tlmm
+  patch:
+    kind: binary
+    ref: Silicon/QC/Sm8650/QcomPkg/PatchedBinaries/PmicDxeLa.efi
+    delta: 58,065 bytes differ（整体重建，非小补丁）
+    enabled: true
+    note: 与 Xiaomi 重建版一起使用；BatteryVoltage 仍为 0。
+  notes: 日志：BatteryVoltage=0、BatteryTemperature=25；ADC 未闭环。
+- id: pmic_glink
+  name: PMIC GLINK
+  group: power
+  driver: PmicGlinkDxe
+  deps:
+  - smem
+  - glink
+  - ipcc
+  - lpass
+  notes: b323本地PMIC GLINK接口存在，电池后端查询已成功。 PIL Not Found，ADSP启动和GLINK远端消息仍未证明。
+- id: charger
+  name: QcomChargerDxeLA
+  group: power
+  driver: QcomChargerDxeLA（stock）
+  deps:
+  - pmic
+  - pmic_glink
+  - tlmm
+  - project_info
+  patch:
+    kind: none
+    note: DXE.inc 里有一条被注释的 PatchedBinaries/QcomChargerDxeLA.inf，但该目录下没有对应文件；实际使用 stock。
+  notes: b323原厂charger入口Success，ChargerEx gate1，电池后端查询成功。 电池存在和连接状态getter可返回；电压ADC和实际充电控制未证实。
+  soft_deps:
+  - project_info_cache
+- id: fuelgauge
+  name: 电量计 (ADC / FG)
+  group: power
+  driver: PmicDxeLa / ChargerLibCommon-FG
+  deps:
+  - pmic
+  - charger
+  notes: b321电池ADC和ChargerEx getter均Unsupported。 b322板号回退不等于燃料计恢复；SOC/温度/有效电压待实机数据。
+- id: scm
+  name: SCM / SMC 调用
+  group: security
+  driver: SCM (QcomScmProtocol)
+  deps:
+  - dxe_core
+  patch:
+    kind: stock
+    enabled: true
+    ref: extract/uefi_extract/ScmDxeCompat.efi
+    note: b317恢复原厂失败分支；b318最终PE身份审计通过。
+  notes: b318 SCM=0x50002，ShmBridge/clientEnv非零，普通SMC成功；b319 SCM PE等于原厂。 SMC传输已通，不能据此宣称所有安全服务/PAS已通。
+- id: smmu
+  name: Apps SMMU
+  group: security
+  base: 352321536
+  size: 1048576
+  driver: HALIOMMU
+  deps:
+  - gcc
+  - icb
+  dt_path: /soc/apps-smmu@15000000
+  compatible: qcom,qsmmu-v500
+  notes: sCR0 bit0是CLIENTPD，1禁用、0启用客户端；S2CR TYPE在[17:16]，CBNDX在[7:0]。 移除把最低两位当TYPE的启动写入，仅观察。寄存器可读或值不变不能排除配置问题。
+- id: tz
+  name: TrustZone / QSEE
+  group: security
+  driver: TZ 固件
+  deps:
+  - scm
+  notes: 普通SMC/ShmBridge可回应；FeatureEnablerDxe股票字符串含featenabler/featenabler_a，APP_QUERY_APPID在加载前ELF_SIGNATURE_ERROR。 未绕过认证。抽出的FeatureEnablerDxe与原厂一致；需要同版本feature
+    TA签名链对照，不能凭本地句柄宣称TZ应用全部可用。
+- id: qseecom
+  name: QSEECom
+  group: security
+  driver: QseeComDxe
+  deps:
+  - tz
+  - smem
+  notes: 兼容loader可为keymaster返回对象；featenabler签名仍失败。 b319观察metadata/size/address、ELF/PH CRC及槽状态；Cmd6/15/16仍拒绝。
+- id: spss
+  name: SPSS 加载器
+  group: security
+  driver: SPSLib
+  deps:
+  - scm
+  - smem
+- id: keymaster
+  name: Keymaster TA
+  group: security
+  driver: KeymasterDxe
+  deps:
+  - qseecom
+  notes: b318 Cmd1 req56返回Success/FFFF0001；原厂4F04只有loader ret0才建立FFFF句柄。 loader返回成功已证明，服务调用/名称查询未验证；b319有界只读槽名称/对象观察。
+- id: lpass
+  name: LPASS / ADSP
+  group: audio
+  base: 50331648
+  size: 1048576
+  driver: PIL / AdspProbeDxe（仅固件可达，启动待验证）
+  deps:
+  - scm
+  - smem
+  - rpmh
+  - gcc
+  soft_deps:
+  - adsp_fw_files
+  - adsp_mdt_integrity
+  notes: 主ADSP固件结构可读；当前没有UEFI下PAS启动或远端应答成功证据。 平台页仅定位PIL/SCM/GLINK；文件存在不能证明LPASS/ADSP运行。
+  dt_path: /soc/remoteproc-adsp@03000000
+  compatible: qcom,pineapple-adsp-pas
+- id: adsp_fw_files
+  name: ADSP 固件文件可达
+  group: audio
+  driver: AdspProbeDxe / FAT
+  deps:
+  - ufs
+  notes: 最新log-stock第307..314在modem_a\image读取adsp.mdt和adsp_dtb.mdt，51+1所需payload大小正确。 extract/shennnong_dsp.img是ext4共享库分区；b320只在电脑解包/哈希，不能用共享库代替主固件启动。
+- id: i2c_audio
+  name: I2C (WCD939x SE)
+  group: audio
+  base: 11059200
+  size: 16384
+  driver: I2CDxe
+  deps:
+  - geni1
+  - tlmm
+  dt_path: /soc/qcom,qupv3_1_geni_se@ac0000/i2c@a8c000
+  compatible: qcom,i2c-geni
+- id: wcd939x
+  name: WCD939x（USB switch）
+  group: usb
+  driver: WcdUsbLib / UsbStockReplayDxe (I2C 0x0E)
+  deps:
+  - i2c_audio
+  - usb_config
+  dt_path: /soc/qcom,qupv3_1_geni_se@ac0000/i2c@a8c000/wcd939x_i2c@e
+  compatible: qcom,wcd939x-i2c
+  patch:
+    kind: source
+    ref: AndromedaPkg/Driver/UsbStockReplayDxe/StockTrace.h
+    enabled: true
+    note: native9160成功返回后恢复路由；FALSE不再次reset，保护I²C页选择与其他位。
+  notes: b326 wrapper在native初始化后恢复WCD，并出现枚举成功；before/restored没有完整留在拼接日志。 保留I2C页/位保护；不能宣称native reset必然破坏WCD，音频也未因此启动。
+- id: audio_out
+  name: UEFI 音频输出栈
+  group: audio
+  deps:
+  - cs35l43_bottom
+  - cs35l43_top
+  - lpass_tdm1
+  notes: 当前UEFI没有音频播放后端；实际扬声器链为LPASS/TDM1+CS35L43。 移除误连到WCD939x USB switch的依赖边。本轮交付状态/条件核对，未实现播放。
+- id: pcie
+  name: PCIe 控制器
+  group: connectivity
+  base: 29360128
+  size: 12288
+  driver: PcieDxe
+  deps:
+  - gcc
+  - tlmm
+  - smmu
+  - rpmh
+  - icb
+  dt_path: /soc/qcom,pcie@1c00000
+  compatible: qcom,pci-msm
+  notes: shennong_fdt.dts PCIe0默认使能、PCIe1禁用；当前FV只有XhciPciEmulationDxe，未加入PciHostBridgeDxe/PciBusDxe/SM8650 rootbridge。 判定为未开始而非链路故障；需先补通用PCI栈和PHY/时钟/SMMU/MSI初始化，HW未通电。
+- id: wlan
+  name: WLAN (PCIe)
+  group: connectivity
+  driver: WlanDxe
+  deps:
+  - pcie
+  notes: DT cnss_pci0位于PCIe0，cnss_wlan_region 32MiB；UEFI未加载WlanDxe。 应依赖PCIe；未开始，不能判定射频/固件问题。BSP cnss2可用于后续。
+- id: nfc
+  name: NFC SN-NCI
+  group: connectivity
+  driver: NfcDxe
+  deps:
+  - geni1
+  - tlmm
+- id: gpu
+  name: Adreno GPU
+  group: other
+  base: 63963136
+  size: 262144
+  driver: KgslDxe
+  deps:
+  - gcc
+  - smmu
+  - rpmh
+  dt_path: /soc/qcom,kgsl-3d0@3d00000
+  compatible: qcom,adreno-gpu-gen7-9-1
+- id: usb_refclk
+  name: USB2 TCSR参考时钟
+  group: usb
+  base: 33493272
+  size: 4
+  driver: PlatformUsbfnLibSm8650
+  deps:
+  - hwio
+  notes: 'b196: USB2 refclk从00000000置为00000001，enabled YES。 '
+- id: usb_noc
+  name: USB A1NOC / SN2 BCM
+  group: clock
+  driver: RPMh BCM SN2
+  deps:
+  - rpmh
+  notes: 历史RPMh部分投票/寄存器成功，NPA/ICB调用亦有异常。 尚未证明USB A1NOC/SN2整条互连已建立；UFS成功不替代USB master验证。
+- id: usb_smmu
+  name: USB SID40 / Context Bank
+  group: usb
+  driver: HALIOMMU + hardware readback
+  deps:
+  - smmu
+  notes: b323验证原厂USB0独占CB8、SCTLR E0/TTBR0/1零、identity buffers并退休旧slot4。 Submit返回且GUI存活；命令完成不等于数据/事件DMA或全部枚举通过。
+- id: ram_log
+  name: GUI / RAM日志二维码
+  group: other
+  driver: FrontPage / BootLog / QrCode
+  deps:
+  - disp_console
+  - buttons
+  notes: b327实际FD含81F00000/256KiB reserved日志区，生产writer/reader wrap及canary通过。 文本容量262120字节+24字节头；避开81D00000..81F00000 SMEM。手机新容量待实机。
+  base: '0x81F00000'
+  size: '0x40000'
+- id: usb_ep0_queue
+  name: EP0 SETUP队列命令
+  group: usb
+  driver: UsbDeviceDxe / UsbfnDwc3Dxe native EP0
+  deps:
+  - usb_smmu
+  - usb_noc
+  notes: b326实际主机请求连续完成device/config descriptor、SET_ADDRESS、GET_STATUS、SET_CONFIGURATION。 native EP0队列/控制传输已有实机结果，不能再沿用b230的无证据状态；新MSC/CDC bulk仍待实机。
+- id: usb_event_dma
+  name: USB设备事件DMA
+  group: usb
+  driver: DWC3 event ring
+  deps:
+  - usb_smmu
+  - usb_noc
+  notes: b326原始日志含busRESET 00000101、CONNECT_DONE 00000201、真实SETUP和配置请求。 DMA事件和EP0枚举链已跨过；b327保留SID/SMR/PAR/归属保护，不跳过preflight。
+- id: pmic_adc
+  name: PMIC ADC电池遥测
+  group: power
+  driver: PmicDxeLa ADC + Health.c
+  deps:
+  - pmic_arb
+  - pmic
+  notes: b323板号/ADC通知链有效，电池ADC仍Unsupported。 电压3500来源未核实；不显示真实电量或温度。
+- id: qsee_query
+  name: QSEE应用ID查询
+  group: security
+  driver: SCM query + Health.c
+  deps:
+  - scm
+  notes: b318正确 feature6：0x02000603 -> Success，结果1/0x02404000/0。 已实测查询；不是ADSP/USB权限成功证明。
+- id: repeater_vdd18
+  name: Repeater VDD18 (L15B)
+  group: power
+  deps:
+  - rpmh
+  driver: RpmhUsbRepeaterRailsOn / ldob15
+  notes: b212 log647–651：ldob15=40A00，1800mV/mode7/enable1均Success。 RPMh确认资源请求；物理电压尚未测量。
+- id: repeater_vdd3
+  name: Repeater VDD3 (L5B)
+  group: power
+  deps:
+  - rpmh
+  driver: RpmhUsbRepeaterRailsOn / ldob5
+  notes: b212 log657–662：ldob5=41100，3104mV/mode7/enable1均Success。 RPMh确认资源请求；物理电压尚未测量。
+- id: usb_repeater
+  name: PM8550B eUSB2 Repeater
+  group: usb
+  deps:
+  - pmic_arb
+  - repeater_vdd18
+  - repeater_vdd3
+  driver: SPMI / StockRepeaterCore / verified native init boundary
+  notes: b326包含FD46/FD08与device清理后获得标准枚举；完整USBRPTR before/ready记录未在拼接日志保留。 不能把关联进展写成FD46唯一根因；本轮保留已核验单字节掩码顺序。
+  patch:
+    kind: source
+    ref: AndromedaPkg/Driver/UsbStockReplayDxe/StockRepeaterCore.h
+    enabled: true
+    note: repeater准备先于native HS PHY；running/EUD不做板级写，GPIO2/6错误不混同FD46。
+- id: adsp_mdt_integrity
+  name: ADSP MDT与split文件检查
+  group: audio
+  deps:
+  - adsp_fw_files
+  driver: AdspProbeDxe / AdspMdtInspect
+  notes: 最新UEFI日志主ADSP 55PHDR/53load/2BSS/51payload/bad0；DTB 3PHDR/1load/1payload/bad0。 结构可达已实测；认证/启动和远端服务未证明。
+- id: adsp_pil
+  name: ADSP PIL协议发布
+  group: audio
+  deps:
+  - dalsys
+  driver: Stock PILDxe / AdspProbeDxe
+  notes: 最新log-stock PIL public NotFound；b320平台页显示正确公共接口发布状态。 未增加未知PAS/认证/固件启动调用；需要持久日志确认实际运行停点。
+  patch:
+    kind: disabled
+    enabled: false
+    ref: b217
+    note: PIL启动panic后移出有效FV；b223 FFS确认。
+- id: usb_speed_test
+  name: USB全速/高速对照
+  group: usb
+  deps:
+  - usb_dwc3
+  driver: FrontPage / USB_BRINGUP revision2
+  notes: stock FS TEST仍不支持；b319以USB TEST和持久停点验证。 不能把Unsupported视为成功执行FS枚举测试。
+- id: usb_manual_tpl
+  name: USB手动测试TPL
+  group: usb
+  driver: UsbfnDwc3Ref / TPL_CALLBACK
+  deps:
+  - usb_dwc3
+  - timer
+  patch:
+    kind: source
+    enabled: true
+    ref: b214
+    note: b214实测TPL断言已消失；真实C嵌套锁/延后timer通过，旧16负对照失败；未解决枚举。
+  notes: b229照片实测StartEx前后与poll1均TPL4；b230保留普通timer/应用服务。 上下文差异已纠正且未消除重启，TPL8不是已确定的唯一根因；返回后的TPL仍待新日志。
+- id: usb_init_event
+  name: BDS USB初始化事件
+  group: usb
+  driver: MsPlatformDevicesLib / 1C0CFFCE
+  deps:
+  - dxe_core
+  patch:
+    kind: source
+    ref: UsbStockReplayDxe / MsPlatformDevicesLib
+    enabled: true
+    note: 按ABL Create→Signal→Close→Locate→StartEx，真实C及最终PE ABI验证。
+  notes: b228照片InitUsbController signal返回Success，但notify同时打印GPIO7。 顺序保持ABL Create/Signal/Close后Locate/StartEx；SignalEvent返回值不能覆盖notify内部失败。
+- id: usb_standard_requests
+  name: USB direct标准控制请求
+  group: usb
+  driver: UsbDeviceDxe native standard requests
+  deps:
+  - usb_ep0_queue
+  - usb_event_dma
+  patch:
+    kind: stock
+    ref: UsbDeviceDxe
+    enabled: true
+    note: 保留原厂标准请求状态机；自研b215实现未作为stock owner编入。
+  notes: b326原始日志已保留GET_DESCRIPTOR、SET_ADDRESS(2A/2B)、GET_STATUS和SET_CONFIGURATION(1)。 标准控制请求/枚举已实机打通，保留native owner；不表示完整fastboot或其他类协议。
+- id: platform_info_abi
+  name: PlatformInfo公共ABI与板型查询
+  group: core
+  driver: PlatformInfoDxeDriver / PlatformInfoCompat
+  deps:
+  - dalsys
+  patch:
+    kind: source
+    enabled: true
+    ref: b215
+    note: rev30000写20字节与旧v2结构16字节不匹配；32字节scratch隔离未知extension，ACPI/SMBIOS/BootLib/USB共同保护。
+  notes: b222 USBPLAT rev30000查询Success，type=8/MTP，extension0，QRD-redriver=0。 b215安全scratch运行成功；原厂仅QRD=0B使用I2C11/addr1C的17项表，本机未满足条件。
+- id: usb_repeater_read_abi
+  name: SPMI字节解析与运行中只读报告
+  group: usb
+  deps:
+  - pmic_arb
+  driver: UsbfnRepeaterRead / UsbfnRepeaterReport
+  patch:
+    kind: source
+    enabled: true
+    ref: b223
+    note: 连续字节缓冲区；rc与Done都通过才发布数值。
+  notes: b222逐字节值完整，却被UINT32[12]解析成000302…；原厂LDRB/STRB与真实C负对照确认。修正诊断，不证明枚举成功。
+- id: usb_image_packaging
+  name: USB最终镜像/FV模块校验
+  group: usb
+  deps:
+  - dxe_core
+  driver: USB最终镜像/FV模块校验
+  notes: b327实际Android/FD/FV、12生产PE/map、7个compiled USB actions、256KiB reserved区和47输入验证通过。 镜像SHA256 e728af81d5e8e775965cec10c00a6cdb642f28f1a5e97b48c11b8b739ae6186f；未git
+    add/commit，已保存未提交备份。
+- id: usb_device_dispatch
+  name: UsbDevice依赖/派发/入口诊断
+  group: usb
+  deps:
+  - dxe_core
+  - pmic_arb
+  - smem
+  driver: UsbDevice依赖/派发/入口诊断
+  notes: b228已驻留/协议发布，照片无需Dispatch/LoadImage恢复。 b227恢复原厂SPMI AND SMEM后已有实测改善；b229保留有界恢复供接口缺失时诊断。
+- id: usb_stock_replay
+  name: 原厂USB DXE客户端
+  group: usb
+  deps:
+  - usb_config
+  - usb_dwc3
+  - timer
+  driver: UsbStockReplayDxe / native client / MSC / CDC / RAM
+  notes: b329 UsbStockReplayDxe沿用原厂Send/HandleEvent身份；仅扩大CDC TX分块容量。 实际主机吞吐仍待实机；native DMA与队列顺序未改。
+  soft_deps:
+  - usb_smmu
+  - usb_stream_handoff
+  - usb_phy_clock
+  - wcd939x
+- id: usb_application_poll
+  name: USB应用循环轮询
+  group: usb
+  deps:
+  - usb_stock_replay
+  - timer
+  driver: SWM application event service
+  notes: b229首次同步进入原生poll；b230最终PE及真实GUI等待函数测试通过。 重入保护保持到清理/TPL检查完成；首四组边界日志，无周期alive，硬件尚未证实可持续运行。
+- id: usb_native_trace
+  name: 原厂USB分层诊断
+  group: usb
+  deps:
+  - usb_application_poll
+  - ram_log
+  driver: UsbStockReplayDxe / StockTrace.h
+  notes: b319启用原厂Empty/Take/Prepare/Update/Submit/Wait/Insert原语的staged SETUP。 五组ARM64差分模型完整状态一致；前3次SETUP关键点持久保存，总checkpoint<=24，增加I/O时序开销。
+- id: readonly_storage
+  name: UFS 协议写保护
+  group: storage
+  driver: ReadOnlyStorageDxe
+  deps:
+  - dxe_core
+  notes: FILES/触控/OSK用户确认正常；logfs定界写入/读回已验证。 b324 ROFS43先于缓存/Pmic/UFS/FAT；其他公共写/擦保护保持。
+- id: file_browser
+  name: 大字只读文件浏览器
+  group: storage
+  driver: FrontPage / FileBrowser.c
+  deps:
+  - ufs
+  - readonly_storage
+  - disp_console
+  - touch_navigation
+  notes: 用户确认 b318 文件浏览正常；b319 接受新版保护协议 Revision2。 公共卷继续只读，RAW/ext4/F2FS/加密卷不提供 FAT 文件浏览。
+- id: touch_navigation
+  name: 单击选择 / 双击确认
+  group: input
+  driver: UIToolKit / FrontPage / TouchGesture
+  deps:
+  - touch
+  - disp_console
+  notes: b329 BootMenu主界面仅GUI/Android/Recovery/UEFI Shell/更多，其余启动项进入“更多”并可返回；拖拽改为Top驱动，Selected始终夹在可见范围内；按键增加PageUp/PageDown翻页。 Android/Recovery优先选择已有命名匹配的Boot####；未从raw分区读取boot_a/boot_b。图标alpha与文本StringInfo改为每菜单缓存不再每帧分配。
+- id: osk
+  name: 手机式触控键盘
+  group: input
+  driver: OnScreenKeyboardDxe
+  deps:
+  - touch
+  - disp_console
+  notes: 用户确认 b318 松手输入和 OSK 正常。 b319 默认及 GUI/Shell 为100%宽、底部居中；新增尺寸的实机观感待确认。
+- id: logfs_partition
+  name: logfs 8 MiB / FAT 卷 5 MiB 边界
+  group: storage
+  driver: ReadOnlyStorageDxe / LogfsDisk.c
+  deps:
+  - ufs
+  - readonly_storage
+  notes: 既有logfs身份/主备GPT/FAT验证实机通过；实际分区8MiB、FAT卷5MiB。 只允许已核验FAT内固定两日志文件写；尾3MiB和其他UFS分区禁止写，USB只导出5MiB只读快照。
+- id: persistent_log
+  name: 两槽持久日志与 LOGREAD
+  group: storage
+  driver: FrontPage / BootLog / LogfsDisk
+  deps:
+  - logfs_partition
+  - ram_log
+  notes: 此前两槽跨重启读回已实测；b327新256KiB payload/512KiB文件界限、CRC/旋转/只读快照测试通过。 QR Log显示RAM日志，Refresh Log明确保存至logfs；LOGREAD保留。电脑slot decoder严格校验64K/256K两格式。新镜像持久回传待实机。
+  soft_deps:
+  - virtual_rtc
+- id: shell_layout
+  name: Shell 大字与圆角留白
+  group: input
+  driver: SerialTextConsole / FrameBufferInMemorySerialPortLib
+  deps:
+  - disp_console
+  - osk
+  notes: 4倍字体，单元24x48；左右96px、顶底160px；QueryMode与实际cursor/清屏一致。 1440x3200为52x59；GUI可返回Boot Menu，Shell OSK满宽底部。实机布局待测。
+- id: chargerex_getters
+  name: ChargerEx 电源只读快照
+  group: power
+  driver: FrontPage / PowerStatusData.c
+  deps:
+  - pmic
+  - charger
+  soft_deps:
+  - pmic_glink
+  - charger_backend
+  notes: b323 gate1；battery-present Success，source-connected先1后0。 voltage getter Success返回3500，但ADC Unsupported，保留来源未核实标记。
+- id: power_status
+  name: GUI Power / Status
+  group: power
+  driver: FrontPage / PowerStatus.c
+  deps:
+  - disp_console
+  - touch_navigation
+  soft_deps:
+  - chargerex_getters
+  - persistent_log
+  notes: b321 power页面及每项getter可执行，检查点保存均Success；实际后端缺失已明确显示。 b322新增Health公开ProjectInfo查询，原厂/严格缓存结果分开记录。FILES/触控/OSK核心逻辑保留。
+- id: i2c_amp
+  name: 扬声器功放 I2C @880000
+  group: audio
+  driver: UEFI driver not implemented
+  deps:
+  - tlmm
+  - gcc
+  dt_path: /soc/qcom,qupv3_2_geni_se@8c0000/i2c@880000
+  compatible: qcom,i2c-geni
+  notes: 原厂DT列出i2c@880000，承载cs35l43@40/@42。 本轮未操作该控制器或功放；不把USB switch I2C成功当扬声器驱动成功。
+- id: lpass_tdm1
+  name: LPASS TDM1 音频传输
+  group: audio
+  driver: UEFI driver not implemented
+  deps:
+  - lpass
+  - tlmm
+  - gcc
+  notes: 原厂DT tdm1_clk/ws/din/dout使用GPIO121/123/122/124。 缺少UEFI音频时钟、DMA、TDM和路由；不是WSA/SoundWire扬声器路径。
+- id: cs35l43_bottom
+  name: CS35L43 扬声器功放 @40
+  group: audio
+  driver: UEFI driver not implemented
+  deps:
+  - i2c_amp
+  - lpass_tdm1
+  dt_path: /soc/qcom,qupv3_2_geni_se@8c0000/i2c@880000/cs35l43@40
+  compatible: cirrus,cs35l43
+  notes: DT I2C地址0x40、reset GPIO85、IRQ GPIO98。 本轮未进行功放/boost写入；音频输出后端尚未实现。
+- id: cs35l43_top
+  name: CS35L43 扬声器功放 @42
+  group: audio
+  driver: UEFI driver not implemented
+  deps:
+  - i2c_amp
+  - lpass_tdm1
+  dt_path: /soc/qcom,qupv3_2_geni_se@8c0000/i2c@880000/cs35l43@42
+  compatible: cirrus,cs35l43
+  notes: DT I2C地址0x42、reset GPIO111、IRQ GPIO99。 本轮未进行功放/boost写入；音频输出后端尚未实现。
+- id: virtual_rtc
+  name: 虚拟 RTC 合法合成日历
+  group: core
+  driver: RealTimeClock / VirtualRealTimeClockLib
+  deps:
+  - timer
+  notes: b321合法合成日历修复后，实际日志保存不再出现Invalid Parameter；生产RTC PE/map已审核。 保留4125日历样本与真实FAT验证；合成日历用于合法时间戳，实际墙钟尚未实现。
+- id: charger_backend
+  name: ChargerEx 所需电池后端
+  group: power
+  driver: QcomChargerDxeLA / GUID 21BFB78B
+  deps:
+  - charger
+  notes: b323 backend21BFB78B Success；battery-present Success value1。 已取得getter实机进展；3500mV仍为未核实来源，电量/温度不可用。
+- id: project_info
+  name: 原厂 ProjectInfo 板号查询
+  group: core
+  driver: ProjectInfoDxe / GUID 64EBEA42
+  deps:
+  - chipinfo
+  - smem
+  soft_deps:
+  - pmic_adc
+  notes: b323 ProjectInfo查询Success，项目value1。 原厂通知45→ADC/Pmic46实机有效，优先原厂getter，验证的ABL缓存补全。
+- id: project_info_cache
+  name: ABL 板号缓存校验回退
+  group: core
+  driver: ProjectInfoCacheDxe / b323
+  deps:
+  - smem
+  - chipinfo
+  - project_info
+  patch:
+    kind: source
+    ref: AndromedaPkg/Driver/ProjectInfoCacheDxe
+    enabled: true
+    note: b323缓存通知先于原厂ProjectInfo/ADC安装；原厂getter优先、严格SMEM135回退。
+  notes: b323 retained SMEM135 chip557 valid1；包装安装，原厂Device Error回退verified ABL cache成功。 板号回退不等于ADC测量恢复；247 OEM行/16 shennong行范围保护保留。
+- id: usb_stream_handoff
+  name: USB SID40 原厂上下文接管
+  group: usb
+  driver: UsbStockReplayDxe / b323
+  deps:
+  - usb_smmu
+  - usb_config
+  patch:
+    kind: source
+    ref: AndromedaPkg/Driver/UsbStockReplayDxe/StockDmaMap.h
+    enabled: true
+    note: 仅退休经启动快照、独占原厂USB0/bypass/idle/identity DMA/全表稳定核验的旧精确SID40。
+  notes: b325旧slot4退休、新slot8/CB8验证和Submit/Wait返回成功。 b326保持每次SETUP的DMA身份/归属检查，54场景及真实原厂连接回归通过。
+- id: usb_cable_lifecycle
+  name: USB 原厂连接 / 断线 / 再连接
+  group: usb
+  driver: UsbStockReplayDxe / b324
+  deps:
+  - usb_config
+  - usb_stream_handoff
+  patch:
+    kind: source
+    ref: AndromedaPkg/Driver/UsbStockReplayDxe/StockTrace.h
+    enabled: true
+    note: 移除pre-set/re-pin/手工CoreInit/提前RunStop；原厂62AC→60D0/37EC/4A64接管连接状态。
+  notes: b326初始化/测试/拔插返回且主机枚举成功。 b327模式切换必须Stop成功后释放DMA buffer；Stop失败锁切换并保留可能由DMA持有的内存。新模式长传输待实机。
+- id: usb_phy_clock
+  name: USB 原厂PIPE/UTMI时钟分支
+  group: usb
+  driver: UsbConfigDxe 9160 / b326
+  deps:
+  - usb_config
+  - usb_hsphy
+  soft_deps:
+  - usb_ssphy
+  patch:
+    kind: source
+    ref: AndromedaPkg/Driver/UsbStockReplayDxe/StockTrace.h
+    enabled: true
+    note: 移除无条件UTMI重放；只观察hs-only/qs08/pipe/phycfg。
+  notes: b325 Qs04，b326标准枚举成功；native PIPE/UTMI时序在真实ARM64验证。 本轮不强制时钟重放；PHY有工作枚举路径，SS速率和独立状态仍待证据。
+- id: reboot_targets
+  name: 退出页 fastboot / recovery 重启
+  group: power
+  driver: FrontPage / verified SPMI sid0:7148 / stock ResetRuntimeDxe
+  deps:
+  - pmic
+  soft_deps:
+  - persistent_log
+  notes: b326仍PMIC读回Device Error；本轮实际PMIC setter -> SPMI+18/154C空RMW软件复现Success但原因字节不变。 只在精确核验后用SPMI完好ReadLong/WriteLong设置SID0:7148一字节并读回，保留bit0；全局旧补丁不改，PSCI/目标待实机。窗口显示具体失败阶段。
+- id: usb_msc
+  name: USB MSC：logfs只读快照（待实机）
+  group: usb
+  driver: UsbFunctions / native UsbDevice
+  deps:
+  - usb_stock_replay
+  - logfs_partition
+  - readonly_storage
+  notes: VID18D1/PID4EE1，BPB扇区4096，RAM快照5MiB；READ/容量/BOT/恢复/写拒绝通过生产测试。 没有UFS writer能力。Refresh logfs export重新保存并快照；Windows盘符/FAT读取待实机。
+- id: usb_cdc
+  name: USB CDC ACM：串口日志（待实机）
+  group: usb
+  driver: UsbFunctions / CDC Union / native UsbDevice
+  deps:
+  - usb_stock_replay
+  - ram_log
+  notes: b329 CDC输出从每包1KiB提高到最多64KiB，减少大段mapping table为清空输出环造成的丢字节与轮询次数。 MSC/BOT读路径仍为64KiB分块；写路径和RAM盘受只读保护策略不变。
+- id: ram_disk
+  name: 512MiB FAT32内存盘（待实机）
+  group: storage
+  driver: UsbRamDisk / AllocatePages / read-only local BlockIo
+  deps:
+  - usb_stock_replay
+  - readonly_storage
+  notes: b328保留纯RAM/FAT32/本机只读；新增64-2048MiB HII string输入，默认512MiB；释放旧盘后才能改大小。 USB连接时取消本地发布，停USB后重新挂载Shell/FILES；无第二份快照，off/重启删除。六种容量的FAT几何与边界通过生产头文件测试。
+- id: log_refresh
+  name: QR Log / Refresh Log（待实机）
+  group: storage
+  driver: FrontPage / BootLogSave
+  deps:
+  - persistent_log
+  - touch_navigation
+  notes: QR Log改名，正下方Refresh Log保存当前RAM，成功/失败均有窗口反馈；实际菜单索引和编译IFR通过。 单次手动保存，不周期刷盘；单文件不超512KiB，RAM日志256KiB。

@@ -1,0 +1,97 @@
+From de92bd3b6c0e7fd437a737428a1be58132b48d4e Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Wed, 28 Oct 2026 19:35:33 +0800
+Subject: [PATCH 5/9] Unwind the frame pointer chain when an exception is
+ reported
+
+The firmware is built with frame pointers, so each FP points at { previous FP, return
+address } and the chain can be walked. A broken chain would fault inside the fault handler,
+where a second fault destroys the report entirely, so every link is validated before it is
+dereferenced: 16-byte alignment like the stack itself, at or above the current SP, within
+256 KB of it, and each step upward by a plausible frame size. Up to twelve frames are
+printed, each resolved to image and offset the way ELR and LR already are.
+---
+ ...moryProtectionExceptionHandlerLibAArch64.c | 67 +++++++++++++++++++
+ 1 file changed, 67 insertions(+)
+
+diff --git a/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c b/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c
+index 72f35a2..eb75681 100644
+--- a/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c
++++ b/MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLibAArch64.c
+@@ -358,6 +358,73 @@ DefaultExceptionHandler (
+     }
+   }
+ 
++  //
++  // Walk the frame pointer chain.
++  //
++  // The firmware is built with frame pointers, so each FP points at { previous FP,
++  // return address }. Unwinding is a matter of following that pair - but a broken chain
++  // would fault again inside the handler, and a fault in the fault handler tells us
++  // nothing. Every link is therefore checked before it is dereferenced: the frame has to
++  // be 16-byte aligned like the stack itself, it has to sit at or above the current SP,
++  // it has to be within a plausible distance of it, and each step has to move upward by
++  // a sane frame size. Anything that fails stops the walk.
++  //
++  {
++    CHAR8   B3[192];
++    UINTN   L3;
++    UINTN   Frame;
++    UINTN   Prev;
++    UINTN   Ret;
++    UINTN   Sp;
++    UINTN   Index;
++    UINTN   Base;
++    UINTN   Hdr;
++    CHAR8  *Pdb;
++
++    Sp = (UINTN)SystemContext.SystemContextAArch64->SP;
++
++    SerialPortWrite ((UINT8 *)"  STACK://n", 9);
++
++    Frame = (UINTN)SystemContext.SystemContextAArch64->FP;
++    for (Index = 0; Index < 12; Index++) {
++      if ((Frame == 0) || ((Frame & 0xF) != 0) ||
++          (Frame < Sp) || (Frame > (Sp + 0x40000))) {
++        break;
++      }
++
++      Prev = *(UINTN *)Frame;
++      Ret  = *(UINTN *)(Frame + 8);
++
++      if (Ret == 0) {
++        break;
++      }
++
++      Base = 0;
++      Hdr  = 0;
++      Pdb  = GetImageName (Ret, &Base, &Hdr);
++      L3   = AsciiSPrint (
++               B3,
++               sizeof (B3),
++               "    [%u] 0x%016lx +0x%08x  %a\n",
++               (UINT32)Index,
++               (UINT64)Base,
++               (Pdb != NULL) ? (UINT32)(Ret - Base) : 0,
++               (Pdb != NULL) ? BaseName (Pdb) : "(not in a known image)"
++               );
++      SerialPortWrite ((UINT8 *)B3, L3);
++
++      //
++      // Frames move up the stack as they unwind. A chain that does not, or that jumps by
++      // more than a frame could plausibly be, is corrupt.
++      //
++      if ((Prev <= Frame) || ((Prev - Frame) > 0x10000)) {
++        break;
++      }
++
++      Frame = Prev;
++    }
++  }
++
+   // DescribeExceptionSyndrome is only reachable from the DEBUG_CODE dump, which
+   // is compiled out in RELEASE; reference it so -Wunused-function is quiet.
+   (VOID)DescribeExceptionSyndrome;
+-- 
+2.43.0
+

@@ -75,6 +75,7 @@ INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/RscDxe/RscD
 # Patched Binaries
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/PatchedBinaries/ButtonsDxe.inf
 INF QcomPkg/PatchedBinaries/SPMIDxe.inf
+INF AndromedaPkg/Driver/VerboseKeyDxe/VerboseKeyDxe.inf
 #
 # Runs immediately before UFSDxe. Clears the controller's enable bit so the storage
 # driver cannot mistake ABL's leftovers for its own initialisation, and logs the state
@@ -97,16 +98,46 @@ INF QcomPkg/PatchedBinaries/SPMIDxe.inf
 # inside UfsPreDxe, which demonstrably runs. Kept here, disabled, so the failure is
 # recorded rather than lost.
 #
-# Publishes gEfiCryptoProtocolGuid. SecurityStubDxe's DxeCryptLib constructor looks for
-# it and asserts when it is missing:
+# SecurityStubDxe's DxeCryptLib constructor locates the crypto protocol at load
+# time and asserts when it is missing:
 #
-#   [DxeCryptLib] Failed to locate Crypto Protocol. Status = Not Found
+#   Locate gEfiCryptoProtocol failed: Not Found
 #   ASSERT [SecurityStubDxe] DxeCryptLib.c(62)/(63)
 #
-# The FV already carries BaseCryptoDriverDxeAARCH64 and MuCryptoDxe, but neither is the
-# protocol publisher - this prebuilt CryptoDxe.efi is.
+# The provider used to sit here, ahead of RngDxe, and that was the bug. Its
+# BaseCryptoDriverDxe DEPEXes on gEfiRngProtocolGuid, so DxeCore skips it on the
+# first pass - but SecurityStubDxe, later in the same pass, does not wait, and its
+# constructor then finds nothing. It now sits directly after RngDxe; see there.
 #
-INF CryptoPkg/Binaries/edk2-basecrypto-driver-bin_extdep/Driver/Bin/CryptoDriverBin_ALL_Dxe_RELEASE_AARCH64.inf
+#
+# The real ShmBridge, ahead of UfsPreDxe on purpose.
+#
+# smcinvoke needs its buffers registered with TrustZone. ShmBridgeDxeLA does that
+# with three SMCs; the stub UfsPreDxe installs only hands out pool memory, and TZ
+# rejects an unregistered buffer with -6 (0xFFFFFFFA), which is exactly what
+# ScmDxeCompat reported:
+#
+#   Scm Invoke call failed ret 0xFFFFFFFA
+#   IClientEnv_registerWithCredentials failed -92
+#
+# This was tried before and the real driver never installed - it issues its SMCs
+# and gives up when they fail. At that time TZ was not answering at all. It is now:
+# SCM gets real error codes back rather than a fault, so the calls have somewhere
+# to land.
+#
+# Both drivers publish the same GUID and whichever installs first is what every
+# later LocateProtocol returns, so UfsPreDxe now checks before installing its stub
+# and stands down if this one got there. If this driver still fails to install, the
+# stub takes over and the log says so - no worse than before, and visible.
+#
+#
+# This line puts the module IN THE FV. The INF in APRIORI.inc only puts it in the
+# dispatch-order table - it does not pack the file. Removing this line while adding
+# the APRIORI entry silently deleted the driver from the image: FVMAIN.Fv.txt went
+# from one occurrence to zero. Both lines are needed, which is how ScmProbeDxe is
+# set up too.
+#
+INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ShmBridgeDxe/ShmBridgeDxeLA.inf
 INF AndromedaPkg/Driver/UfsPreDxe/UfsPreDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/IsolatedBinaries/UFSDxe.inf
 #
@@ -168,11 +199,23 @@ INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/VerifiedBoo
 #
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ShmBridgeDxe/ShmBridgeDxeLA.inf
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/TzDxe/ScmDxeCompat.inf
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/PatchedBinaries/UsbConfigDxe.inf
-# ClockDxe DISABLED: it is the last driver printed before the hang.
-# It is a PatchedBinary built for another SoC and appears to spin forever
-# here (SM8650). ABL already leaves the GCC clocks running, so skipping it
-# is acceptable while we chase USB.
+!if $(USB_STOCK_CHAIN) == 1
+# Replay uses the extracted stock module, not the previous GPIO-patched variant.
+INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbConfigDxe/UsbConfigDxe.inf
+!endif
+# ClockDxe: ENABLED, and it works.
+#
+# The note that used to sit here said "DISABLED: it is the last driver printed
+# before the hang, a PatchedBinary built for another SoC". None of that holds
+# any more. The line below is not commented out, the ClockDxe in the FV is the
+# stock shennong one (PE32 229,380 bytes against 229,376 for
+# Binaries/QcomPkg/Drivers/ClockDxe/ClockDxe.efi), and it appears in the boot
+# log as [DRV] A6DEB54D02531A4D8A82677A683B0D29.
+#
+# It also cannot be skipped: decoding I2CDxe.depex shows the second GUID in it
+# is 241AFAE6-885F-4F6C-A7EA-C28EAB79C3E5, which is gEfiClockProtocolGuid, so
+# I2CDxe would never dispatch without the clock driver publishing that protocol
+# - and I2CDxe does dispatch. The clock is therefore not what breaks I2C.
 INF QcomPkg/PatchedBinaries/ClockDxe.inf
 #INF AndromedaPkg/Driver/DisplayCallerDxe/DisplayCallerDxe.inf
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/DisplayDxe/DisplayDxe.inf  # DEBUG: panel re-init (Xiaomi ABL may tear down display)  # disabled: panel alive via ABL splash; suspected ASSERT source
@@ -258,6 +301,25 @@ FILE DRIVER =  F09AD92E-4E91-490F-AB99-E69939B840B2 {
 # SimpleWindowManagerDxe (and UsbfnDwc3Dxe) never dispatch.
 #
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/RNGDxe/RngDxe.inf
+
+#
+# The crypto provider, directly after RngDxe and nowhere else.
+#
+# CryptoDriverBin_ALL carries BaseCryptoDriverDxe, which DEPEXes on
+# gEfiRngProtocolGuid and is the only publisher of gEdkiiCryptoProtocolGuid.
+# SecurityStubDxe's DxeCryptLib constructor needs that protocol and has DEPEX TRUE,
+# so it does not wait for anything - if the provider has not dispatched by the time
+# DxeCore reaches SecurityStubDxe, the constructor fails and the assert fires.
+#
+# DxeCore walks the FV in order and defers drivers whose DEPEX is unsatisfied
+# without coming back to them until the next pass. So the provider has to appear
+# after the module that satisfies its DEPEX, and before its consumer. That is
+# exactly here: RngDxe above, SecurityStubDxe at Shennong.fdf:165 below.
+#
+# It used to sit near the top of the list, ahead of RngDxe, which put it in the
+# deferred bucket on the pass that SecurityStubDxe ran in.
+#
+INF CryptoPkg/Binaries/edk2-basecrypto-driver-bin_extdep/Driver/Bin/CryptoDriverBin_ALL_Dxe_RELEASE_AARCH64.inf
 
 #
 # Qualcomm's ResetRuntimeDxe does NOT install gEfiResetArchProtocolGuid (verified:
@@ -625,35 +687,94 @@ INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/CPRDxe/CPRD
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/GpiDxe/GpiDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/SPIDxe/SPIDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/SdccDxe/SdccDxe.inf
-#INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ChargerExDxe/ChargerExDxe.inf
+# Charging drivers: ENABLED.
+#
+# Both were commented out, so the image carried no charger driver at all - only
+# PmicDxe and PmicGlinkDxe, and the latter reaches the PMIC over GLINK to the
+# ADSP, which is not running here. That left the Power Control USB protocol
+# answering for port 0 but with nothing behind it.
+#
+# Both .depex files are two bytes (TRUE), so neither has a dependency and both
+# will dispatch unconditionally.
+INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ChargerExDxe/ChargerExDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PmicGlinkDxe/PmicGlinkDxe.inf
-#INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/QcomChargerDxe/QcomChargerDxeLA.inf
+INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/QcomChargerDxe/QcomChargerDxeLA.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbPwrCtrlDxe/UsbPwrCtrlDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/TsensDxe/TsensDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/DDRInfoDxe/DDRInfoDxe.inf
 #INF (already provided by the FILE DRIVER block below, same GUID 1C04F529)
+# Qualcomm UsbfnDwc3Dxe removed: StartController is an eight byte stub and the core init
+# hangs in DEPSTARTCFG. The ported reference driver replaces it.
+#INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbfnDwc3Dxe/UsbfnDwc3Dxe.inf
+!if $(USB_STOCK_CHAIN) == 1
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbfnDwc3Dxe/UsbfnDwc3Dxe.inf
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciPciEmulationDxe/XhciPciEmulationDxe.inf
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciDxe/XhciDxe.inf
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbBusDxe/UsbBusDxe.inf
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbKbDxe/UsbKbDxe.inf
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbMassStorageDxe/UsbMassStorageDxe.inf
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbMsdDxe/UsbMsdDxe.inf
+!else
+INF AndromedaPkg/Driver/UsbfnDwc3Ref/UsbfnDwc3Ref.inf
+!endif
+# INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciPciEmulationDxe/XhciPciEmulationDxe.inf # b198: direct USB2 controller owner
+# INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciDxe/XhciDxe.inf # b198: direct USB2 controller owner
+# INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbBusDxe/UsbBusDxe.inf # b198: direct USB2 controller owner
+# INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbKbDxe/UsbKbDxe.inf # b198: direct USB2 controller owner
+# INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbMassStorageDxe/UsbMassStorageDxe.inf # b198: direct USB2 controller owner
+# INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbMsdDxe/UsbMsdDxe.inf # b198: direct USB2 controller owner
+!if $(USB_STOCK_CHAIN) == 1
+INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbDeviceDxe/UsbDeviceDxe.inf
+INF AndromedaPkg/Driver/UsbStockReplayDxe/UsbStockReplayDxe.inf
+!else
 INF AndromedaPkg/Driver/UsbDevStartDxe/UsbDevStartDxe.inf
+!endif
 INF AndromedaPkg/Driver/GcdProbeDxe/GcdProbeDxe.inf
 INF AndromedaPkg/Driver/EarlyBdsArchDxe/EarlyBdsArchDxe.inf
 #INF AndromedaPkg/Driver/TouchProbeDxe/TouchProbeDxe.inf   # disabled: reading TLMM resets the device
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbDeviceDxe/UsbDeviceDxe.inf
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbInitDxe/UsbInitDxe.inf
+# INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbDeviceDxe/UsbDeviceDxe.inf # b198: direct USB2 controller owner
+# INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbInitDxe/UsbInitDxe.inf # b198: direct USB2 controller owner
 
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UCDxe/UCDxe.inf
-FILE DRIVER = 5F0937CD-73F9-445E-B320-BB6FD5D3CBDE {
-    SECTION PE32 = $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UCDxe/UCDxe.efi
-    SECTION UI = "UCDxe"
-}
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILDxe/PILDxe.inf
-INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILProxyDxe/PILProxyDxe.inf
+# b198 direct USB2 test: disable competing owner UCDxe
+# FILE DRIVER = 5F0937CD-73F9-445E-B320-BB6FD5D3CBDE {
+#     SECTION PE32 = $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UCDxe/UCDxe.efi
+#     SECTION UI = "UCDxe"
+# }
+#INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILDxe/PILDxe.inf
+#INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILProxyDxe/PILProxyDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/SPSSDxe/SPSSDxe.inf
+#
+# ScmDxeCompat and TzDxeLA, here and not earlier.
+#
+# This is the whole point of the position. The chain is
+#   UFS -> SPSS/TZ -> SCM -> QMI -> glink -> NPA
+# and SCM sits above TZ, not beside it: SmcInvokeInit issues SMC calls that only
+# answer once the secure processor is running. When ScmDxeCompat was enabled up
+# near ICBDxe, the SmcInvokeConfig lookup succeeded and the boot then hung inside
+# SmcInvokeInit - because SPSS had not loaded:
+#   SPSSDxe: MountFatPartition(spunvm) failed
+#   pil-SPSS: Failed to load metadata
+# That was when UFS was dead. UFS now publishes all six LUNs and spunvm is on
+# LUN 4 (sde66), so SPSSDxe has something to mount and the order below is the one
+# that can actually work.
+#
+# TzDxeLA comes after ScmDxeCompat because every QSEECOM method forwards to
+# gScmProtocol->ScmSendCommand (reverse/src/TzDxeLA.c); with SCM absent the
+# protocol installs and then does nothing.
+#
+# Neither declares a DEPEX and APRIORI is inert in this port, so FV order is the
+# only ordering control - this position is the whole mechanism.
+#
+INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/TzDxe/ScmDxeCompat.inf
+#
+# The probe, between SCM and TzDxe on purpose: it reports the state ScmDxeCompat
+# left behind, and it has to run before TzDxeLA reaches the code that crashes.
+#
+INF AndromedaPkg/Driver/PcdShimDxe/PcdShimDxe.inf
+# Touch: GENI SPI at 0xA90000 + Synaptics TCM, publishes Absolute Pointer.
+# The driver prints each stage and never fails the boot, so a partial chain still
+# lets the UI come up.
+INF AndromedaPkg/Driver/SynapticsTouchDxe/SynapticsTouchDxe.inf
+INF AndromedaPkg/Driver/ReadOnlyStorageDxe/ReadOnlyStorageDxe.inf
+INF AndromedaPkg/Driver/ProjectInfoCacheDxe/ProjectInfoCacheDxe.inf
+INF AndromedaPkg/Driver/ScmProbeDxe/ScmProbeDxe.inf
+INF AndromedaPkg/Driver/AdspProbeDxe/AdspProbeDxe.inf
+INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/TzDxe/TzDxeLA.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/FvUtilsDxe/FvUtilsDxe.inf
 
 # Dxe without depex 
@@ -681,3 +802,25 @@ INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/SSRDxe/SSRD
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/RmVmDxe/RmVmDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ConfigWordsDxe/ConfigWordsDxe.inf
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/HSUARTDxe/HSUART.inf
+
+#
+# SecParti.cfg - the RPMB/GPT partition configuration.
+#
+# Without it the boot reports:
+#
+#   Failed to load SecParti.cfg Status = (0xE)
+#   Failed to initialize Partition config. Status 0x0000000E
+#
+# 0xE is EFI_NOT_FOUND, and it is genuine absence: the only reference to this
+# file was in the older Binaries/DXE.inc, and the file itself was not in
+# Binaries/RawFiles/ at all, so nothing was ever packed.
+#
+# The content is the copy recovered from this device's own firmware
+# (extract/uefi_extract/SecParti.cfg.raw), not a reconstruction - the file starts
+# by stating that its version must match the partition table version in TZ, so a
+# guessed one would be worse than none.
+#
+FILE FREEFORM = A1E235DE-E825-4591-9623-C43175811826 {
+    SECTION UI = "SecParti.cfg"
+    SECTION RAW = $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/RawFiles/SecParti.cfg
+}

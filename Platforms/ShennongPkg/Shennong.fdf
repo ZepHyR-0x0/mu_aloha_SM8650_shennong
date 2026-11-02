@@ -142,14 +142,12 @@ READ_LOCK_STATUS   = TRUE
   INF MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
 
   # PORT: BDS is configured (PcdBootManagerMenuFile) to launch this shell as its
-  # "boot manager menu", because FrontPage crashes on this platform. There is no
-  # input device yet, so startup.nsh dumps diagnostics to the framebuffer instead.
+  # "boot manager menu".
+  #
+  # The startup.nsh that used to be packed here has been removed: it only existed
+  # to dump diagnostics when no input device worked, and it now fights the user
+  # for the prompt. Nothing else about the shell changes.
   INF ShellPkg/Application/Shell/Shell.inf
-
-  FILE FREEFORM = 7C04A583-9E3E-4F1C-AD65-E05268D0B4D2 {
-    SECTION UI = "startup.nsh"
-    SECTION RAW = $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/RawFiles/startup.nsh
-  }
   INF MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
 #  INF MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
 #  INF MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf

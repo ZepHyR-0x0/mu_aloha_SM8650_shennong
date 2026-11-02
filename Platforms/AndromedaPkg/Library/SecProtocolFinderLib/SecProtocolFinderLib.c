@@ -1119,6 +1119,50 @@ exit:
   return Status;
 }
 
+/**
+  Print the first words at a candidate protocol address.
+
+  An address that is aligned and inside the TE can still be the wrong address -
+  those two checks say nothing about whether a protocol structure actually lives
+  there, and the scan has several heuristics that can land on a lookalike. Reading
+  the first words settles it: a Qualcomm protocol structure starts with its
+  Revision, a small 0x0001xxxx / 0x0002xxxx style value.
+
+  A fault here is impossible because the range is checked against the TE first.
+
+  @param[in] Tag    Which protocol this candidate is for.
+  @param[in] Addr   Candidate address.
+  @param[in] Te     The TE image it was resolved against.
+**/
+STATIC
+VOID
+SfTraceCandidate (
+  IN CONST CHAR8    *Tag,
+  IN UINTN          Addr,
+  IN TE_INFO_STRUCT *Te
+  )
+{
+  UINT64  Low  = (UINT64)(UINTN)Te->TEBuffer;
+  UINT64  High = Low + Te->fileSize;
+  UINT32  *Words;
+
+  if ((Addr == 0) || ((Addr & 3) != 0)) {
+    SfTrace ("[SF] %a candidate 0x%lx is not a usable pointer\n\r", Tag,
+             (UINT64)Addr);
+    return;
+  }
+
+  if ((Addr < Low) || ((Addr + 16) > High)) {
+    SfTrace ("[SF] %a candidate 0x%lx OUTSIDE TE 0x%lx..0x%lx\n\r", Tag,
+             (UINT64)Addr, Low, High);
+    return;
+  }
+
+  Words = (UINT32 *)(UINTN)Addr;
+  SfTrace ("[SF] %a vtable @0x%lx: %08x %08x %08x %08x\n\r", Tag,
+           (UINT64)Addr, Words[0], Words[1], Words[2], Words[3]);
+}
+
 VOID InitProtocolFinder(
     IN EFI_PHYSICAL_ADDRESS *ScheAddr, IN EFI_PHYSICAL_ADDRESS *XBLDTOpsAddr)
 {
@@ -1162,6 +1206,7 @@ VOID InitProtocolFinder(
 
     if (!EFI_ERROR(status)) {
       ScheIntrAddr = SfValidateAddr ("sched", ScheIntrAddr, &CoreTE);
+      SfTraceCandidate ("sched", ScheIntrAddr, &CoreTE);
       // Fill caller's address
       *ScheAddr = ScheIntrAddr;
     }
@@ -1174,6 +1219,7 @@ VOID InitProtocolFinder(
 
     if (!EFI_ERROR(status)) {
       SecDTOpsAddr = SfValidateAddr ("xbldt", SecDTOpsAddr, &CoreTE);
+      SfTraceCandidate ("xbldt", SecDTOpsAddr, &CoreTE);
       // Fill caller's address
       *XBLDTOpsAddr = SecDTOpsAddr;
     }

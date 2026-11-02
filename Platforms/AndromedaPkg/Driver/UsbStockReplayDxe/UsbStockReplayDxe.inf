@@ -1,0 +1,66 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = UsbStockReplayDxe
+  FILE_GUID = 1638dfb0-62cc-4c10-81e7-99857d06de44
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = UsbStockReplayEntry
+
+[Sources]
+  UsbStockReplayDxe.c
+  StockTrace.h
+  StockRepeaterCore.h
+  UsbRamDisk.h
+  UsbFunctions.h
+  UsbFunctionDescriptors.h
+  StockFunctionClient.h
+  UsbConsoleCore.h
+  UsbShellConsole.h
+  UsbRemoteCommands.h
+  StockUsbPolicy.h
+  StockDmaMap.h
+  StockDmaMapCore.h
+  StockDmaStreamCore.h
+  ../../FrontPage/BootLog.c
+  ../../Library/WcdUsbLib/WcdUsbLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  QcomModulePkg/QcomModulePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+  MsGraphicsPkg/MsGraphicsPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  DxeServicesTableLib
+  DevicePathLib
+  BaseMemoryLib
+  IoLib
+  MemoryAllocationLib
+  PrintLib
+  SerialPortLib
+  ArmLib
+  CacheMaintenanceLib
+  MemoryMapHelperLib
+
+[Protocols]
+  gApplicationEventServiceProtocolGuid
+  gEfiUsbDeviceProtocolGuid
+  gEfiUsbFunctionIoProtocolGuid
+  gEfiFirmwareVolume2ProtocolGuid
+  gEfiBlockIoProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiLoadedImageProtocolGuid
+  gEfiSimpleTextInProtocolGuid
+  gEfiSimpleTextInputExProtocolGuid
+  gEfiSimpleTextOutProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+
+[Guids]
+  gEfiEventExitBootServicesGuid
+
+[Depex]
+  TRUE

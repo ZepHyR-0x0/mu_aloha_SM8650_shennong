@@ -31,6 +31,7 @@
 #include "QrCode.h"
 #include "BootLog.h"
 #include "BootMenu.h"
+#include "RemoteControl.h"
 #include <Protocol/Smbios.h>
 #include <Protocol/OnScreenKeyboard.h>
 #include <Protocol/SimpleWindowManager.h>
@@ -41,6 +42,8 @@
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
 #include <Library/SerialPortLib.h>
+#include <Library/FrameBufferSerialPortLib.h>
+#include <Library/TimerLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/HiiLib.h>
@@ -50,6 +53,8 @@
 #include <Library/UefiLib.h>
 #include <Library/UefiBootManagerLib.h>
 #include <Library/DxeServicesLib.h>
+#include <PiDxe.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Library/BmpSupportLib.h>
 #include <Library/BootGraphicsProviderLib.h>
 #include <Library/BootGraphicsLib.h>
@@ -67,6 +72,9 @@
 #include <UIToolKit/SimpleUIToolKit.h>
 #include <Library/IoLib.h>
 #include <Protocol/EFIUsbDevice.h>
+#include <Protocol/UsbBringup.h>
+#include <Protocol/FirmwareInput.h>
+#include <Configuration/BootDevices.h>
 
 //
 // PORT: breadcrumbs.
@@ -87,7 +95,71 @@ FpPortSay (
   SerialPortWrite ((UINT8 *)Text, AsciiStrLen (Text));
 }
 
-#define FP_OSK_WIDTH_PERCENT  75            // On-screen keyboard is 75% the width of the screen.
+//
+// The unified screen log path (FrameBufferSerialPortLib) stays silent unless
+// this sets verbose. The boot menu and GUI are drawn through SWM, so the few
+// seconds before UefiMain are deliberately blank unless volume-up was held.
+//
+STATIC
+VOID
+FpDetectVerbose (
+  VOID
+  )
+{
+  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *In    = NULL;
+  EFI_DEVICE_PATH_PROTOCOL           *Path;
+  EFI_HANDLE                          Handle = NULL;
+  EFI_KEY_DATA                        Key;
+  EFI_GUID                            InputGuid = FIRMWARE_INPUT_PROTOCOL_GUID;
+  FIRMWARE_INPUT_PROTOCOL             *FirmwareInput = NULL;
+
+  // Preserve the early DXE selection, without draining the keypad again.
+  if (FbConGetVerbose ()) {
+    return;
+  }
+  // The DXE sampler owns boot-key detection and preserves other buffered keys.
+  // Do not drain its input wrapper a second time when FrontPage starts.
+  if (!EFI_ERROR (gBS->LocateProtocol (&InputGuid, NULL, (VOID **)&FirmwareInput)) &&
+      FirmwareInput != NULL) {
+    return;
+  }
+
+  //
+  // gST->ConsoleInHandle is SerialTextConsoleDxe, whose SimpleTextIn never
+  // reports a key. The real volume keys come from the prebuilt ButtonsDxe,
+  // which installs SimpleTextInputEx on the keypad device path.
+  //
+  Path = (EFI_DEVICE_PATH_PROTOCOL *)&KeypadDevicePath;
+  if (EFI_ERROR (gBS->LocateDevicePath (
+                    &gEfiSimpleTextInputExProtocolGuid,
+                    &Path,
+                    &Handle
+                    )) ||
+      (Handle == NULL) ||
+      EFI_ERROR (gBS->HandleProtocol (
+                    Handle,
+                    &gEfiSimpleTextInputExProtocolGuid,
+                    (VOID **)&In
+                    )) ||
+      (In == NULL))
+  {
+    return;
+  }
+
+  // Fallback for profiles without VerboseKeyDxe. Sample buffered input once;
+  // the normal profile already samples asynchronously during DXE.
+  if (In->ReadKeyStrokeEx (In, &Key) == EFI_SUCCESS && Key.Key.ScanCode == SCAN_UP) {
+    FbConSetVerbose (TRUE);
+  }
+}
+
+//
+// Defined much further down, but the DIAG menu entry calls it, and that entry
+// lives above the definition.
+//
+STATIC VOID FpApplyUsbMode (VOID);
+
+#define FP_OSK_WIDTH_PERCENT  100           // Full screen width, transformed key hit areas.
 
 UINTN       mCallbackKey;
 EFI_HANDLE  mImageHandle;
@@ -147,14 +219,20 @@ struct {
   //    Index (Full)  Index (Limited)     String                                      Formset Guid                       Form ID
   // -------------------------------------------------------------------------------------------------------------------------------------------------------------------
   { 0, 0,            STRING_TOKEN (STR_MF_MENU_OP_PCINFO),    FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_PCINFO   },                           // PC info
-  { 1, UNUSED_INDEX, STRING_TOKEN (STR_MF_MENU_OP_SECURITY),  FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_SECURITY },                           // Security
-  { 2, UNUSED_INDEX, STRING_TOKEN (STR_MF_MENU_OP_BOOTORDER), MS_BOOT_MENU_FORMSET_GUID,      MS_BOOT_ORDER_FORM_ID       },                           // Boot Order
-  { 3, 1,            STRING_TOKEN (STR_MF_MENU_OP_DFCI),      DFCI_MENU_FORMSET_GUID,         DFCI_MENU_FORM_ID           },                           // DFCI
-  { 4, UNUSED_INDEX, STRING_TOKEN (STR_MF_MENU_OP_HWH),       HWH_MENU_FORMSET_GUID,          HWH_MENU_FORM_ID            },                           // HWH
-  { 5, 2,            STRING_TOKEN (STR_MF_MENU_OP_EXIT),      FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_EXIT     },                            // Exit
-  { 6, 3,            STRING_TOKEN (STR_MF_MENU_OP_LOG),       FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_LOG      },                            // LOG
-  { 7, 4,            STRING_TOKEN (STR_MF_MENU_OP_LOGAUTO),   FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_LOGAUTO  },                            // LOG auto
-  { 8, 5,            STRING_TOKEN (STR_MF_MENU_OP_DIAG),      FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_DIAG     }                            // diagnostics
+  // Security, Boot configuration, Management (DFCI) and Hardware Health are
+  // hidden from this bring-up GUI. Their formset GUIDs remain available.
+  // { UNUSED_INDEX, UNUSED_INDEX, STRING_TOKEN (STR_MF_MENU_OP_SECURITY),  FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_SECURITY },
+  // { UNUSED_INDEX, UNUSED_INDEX, STRING_TOKEN (STR_MF_MENU_OP_BOOTORDER), MS_BOOT_MENU_FORMSET_GUID,      MS_BOOT_ORDER_FORM_ID       },
+  // { UNUSED_INDEX, UNUSED_INDEX, STRING_TOKEN (STR_MF_MENU_OP_DFCI),      DFCI_MENU_FORMSET_GUID,         DFCI_MENU_FORM_ID           },
+  // { UNUSED_INDEX, UNUSED_INDEX, STRING_TOKEN (STR_MF_MENU_OP_HWH),       HWH_MENU_FORMSET_GUID,          HWH_MENU_FORM_ID            },
+  { 1, 1,            STRING_TOKEN (STR_MF_MENU_OP_LOGAUTO),   FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_LOGAUTO  },                            // QR Log
+  { 2, 2,            STRING_TOKEN (STR_MF_MENU_OP_LOGREAD),   FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_LOGREAD },                            // QR Log (last)
+  { 3, 3,            STRING_TOKEN (STR_MF_MENU_OP_REFRESH_LOG), FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_REFRESH_LOG },
+  { 4, 4,            STRING_TOKEN (STR_MF_MENU_OP_DIAG),      FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_USB     },                           // USB Function
+  { 5, 5,            STRING_TOKEN (STR_MF_MENU_OP_FILES),     FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_FILES },
+  { 6, 6,            STRING_TOKEN (STR_MF_MENU_OP_POWER_STATUS), FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_POWER_STATUS },
+  { 7, 7,            STRING_TOKEN (STR_MF_MENU_OP_RETURN_BOOT), FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_RETURN_BOOT },
+  { 8, 8,            STRING_TOKEN (STR_MF_MENU_OP_EXIT),      FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_EXIT     }                            // Reboot
 };
 
 // Frontpage form set GUID
@@ -705,39 +783,6 @@ UninitializeFrontPage (
 
 **/
 
-//
-// Queue of QR log pages: one linked-list node per page of text.
-//
-typedef struct _QR_LOG_PAGE {
-  LIST_ENTRY    Link;
-  CHAR8         Text[QR_MAX_BYTES + 1];
-} QR_LOG_PAGE;
-
-STATIC
-EFI_STATUS
-QrLogAddPage (
-  IN LIST_ENTRY   *Queue,
-  IN CONST CHAR8  *Text
-  )
-{
-  QR_LOG_PAGE  *Page;
-  UINTN        Len;
-
-  Len = AsciiStrLen (Text);
-  if ((Len == 0) || (Len > QR_MAX_BYTES)) {
-    return EFI_INVALID_PARAMETER;
-  }
-
-  Page = AllocateZeroPool (sizeof (QR_LOG_PAGE));
-  if (Page == NULL) {
-    return EFI_OUT_OF_RESOURCES;
-  }
-
-  CopyMem (Page->Text, Text, Len);
-  InsertTailList (Queue, &Page->Link);
-  return EFI_SUCCESS;
-}
-
 STATIC
 VOID
 QrLogTrace (
@@ -773,40 +818,211 @@ QrLogDrainInput (
   }
 }
 
+/**
+  Non-blocking Enter test, for loops that must keep working while watching for a key.
+
+  Packets advance on a timer, so the key is checked between slices and the
+  loop carries on if it is absent.
+
+  Enter is the same predicate the UI toolkit uses to select a control - the keypad
+  driver maps the power key to it, so this fires on the power button.
+
+  @retval TRUE   Enter was pending, and has been consumed.
+  @retval FALSE  Nothing, or only other keys - those are discarded.
+
+**/
 STATIC
-EFI_STATUS
-QrLogWaitForEnter (
+BOOLEAN
+QrLogEnterPressed (
   IN EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *SimpleTextInEx
   )
 {
-  EFI_STATUS    Status;
   EFI_KEY_DATA  KeyData;
 
-  for (;;) {
-    Status = SimpleTextInEx->ReadKeyStrokeEx (SimpleTextInEx, &KeyData);
-    if (Status == EFI_NOT_READY) {
-      gBS->Stall (50 * 1000);
-      continue;
-    }
+  if (SimpleTextInEx == NULL) {
+    return FALSE;
+  }
 
-    if (EFI_ERROR (Status)) {
-      return Status;
-    }
-
-    //
-    // Same predicate the UI toolkit uses to select a control: the keypad
-    // driver maps the power key to Enter, so this fires on the power button.
-    //
+  while (SimpleTextInEx->ReadKeyStrokeEx (SimpleTextInEx, &KeyData) == EFI_SUCCESS) {
     if (KeyData.Key.UnicodeChar == CHAR_CARRIAGE_RETURN) {
-      return EFI_SUCCESS;
+      return TRUE;
     }
+  }
+
+  return FALSE;
+}
+
+STATIC EFI_FONT_DISPLAY_INFO  *mQrProgressInfo = NULL;
+STATIC EFI_IMAGE_OUTPUT       *mQrProgressOut  = NULL;
+
+/**
+  Show "current / total" while the QR stream runs.
+
+  The symbol is square and centred in the content area, so there is a wide band
+  of unused space above it on a 1440x3200 panel - that is where the counter goes.
+  It is drawn after the code, never over it.
+**/
+STATIC
+VOID
+QrLogShowProgress (
+  IN UINTN  Current,
+  IN UINTN  Total
+  )
+{
+  EFI_STATUS  Status;
+  CHAR16      Text[64];
+  UINT16      FontSize;
+  UINTN       X;
+  UINTN       Y;
+
+  if (mSWMProtocol == NULL) {
+    return;
+  }
+
+  if (mQrProgressInfo == NULL) {
+    mQrProgressInfo = AllocateZeroPool (sizeof (*mQrProgressInfo));
+    if (mQrProgressInfo == NULL) {
+      return;
+    }
+  }
+
+  //
+  // StringToImage rejects a NULL *Blt with EFI_INVALID_PARAMETER when
+  // EFI_HII_DIRECT_TO_SCREEN is set - it needs a real surface to draw into.
+  // This is the same buffer RenderTitlebar allocates before its own call.
+  //
+  if (mQrProgressOut == NULL) {
+    mQrProgressOut = AllocateZeroPool (sizeof (*mQrProgressOut));
+    if (mQrProgressOut == NULL) {
+      return;
+    }
+
+    mQrProgressOut->Width=(UINT16)(mBootHorizontalResolution-mMasterFrameWidth-80);
+    mQrProgressOut->Height=(UINT16)(2*(MsUiGetMediumFontHeight()+12));
+    mQrProgressOut->Image.Bitmap=AllocateZeroPool((UINTN)mQrProgressOut->Width*mQrProgressOut->Height*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL));
+    if (mQrProgressOut->Image.Bitmap==NULL) { FreePool(mQrProgressOut);mQrProgressOut=NULL;return; }
+  }
+
+  //
+  // FontSize must be one of the sizes the theme actually provides. 32 was
+  // rejected outright, which is why nothing appeared on screen.
+  //
+  FontSize = MsUiGetMediumFontHeight ();
+
+  X = mMasterFrameWidth + 40;
+  Y = mTitleBarHeight + 40;
+
+  ZeroMem (mQrProgressInfo, sizeof (*mQrProgressInfo));
+  mQrProgressInfo->FontInfoMask       = EFI_FONT_INFO_ANY_FONT;
+  mQrProgressInfo->FontInfo.FontSize  = FontSize;
+  mQrProgressInfo->FontInfo.FontStyle = EFI_HII_FONT_STYLE_NORMAL;
+  CopyMem (
+    &mQrProgressInfo->ForegroundColor,
+    &gMsColorTable.TitleBarTextColor,
+    sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)
+    );
+  CopyMem (
+    &mQrProgressInfo->BackgroundColor,
+    &gMsColorTable.MasterFrameBackgroundColor,
+    sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)
+    );
+
+  // Render to a bitmap first: DIRECT_TO_SCREEN depends on the currently active
+  // GOP surface, which is not necessarily the FrontPage content window.
+  UINTN Pixel;
+  for (Pixel=0;Pixel<(UINTN)mQrProgressOut->Width*mQrProgressOut->Height;Pixel++)
+    mQrProgressOut->Image.Bitmap[Pixel]=mQrProgressInfo->BackgroundColor;
+  UnicodeSPrint(Text,sizeof(Text),L"Log transfer: %u / %u (%u%%)",Current,Total,Total==0?0:Current*100/Total);
+
+  Status = mSWMProtocol->StringToWindow (
+                           mSWMProtocol,
+                           mImageHandle,
+                           EFI_HII_OUT_FLAG_CLIP | EFI_HII_OUT_FLAG_CLIP_CLEAN_X |
+                           EFI_HII_OUT_FLAG_CLIP_CLEAN_Y | EFI_HII_IGNORE_LINE_BREAK,
+                           Text,
+                           mQrProgressInfo,
+                           &mQrProgressOut,
+                           0,
+                           0,
+                           NULL,
+                           NULL,
+                           NULL
+                           );
+  if (EFI_ERROR (Status)) {
+    QrLogTrace ("[QRA] progress counter -> %r\r\n", Status);
+  }
+
+  UnicodeSPrint (Text, sizeof (Text), L"Press Power to stop transfer");
+
+  Status = mSWMProtocol->StringToWindow (
+                           mSWMProtocol,
+                           mImageHandle,
+                           EFI_HII_OUT_FLAG_CLIP | EFI_HII_OUT_FLAG_CLIP_CLEAN_X |
+                           EFI_HII_OUT_FLAG_CLIP_CLEAN_Y | EFI_HII_IGNORE_LINE_BREAK,
+                           Text,
+                           mQrProgressInfo,
+                           &mQrProgressOut,
+                           0,
+                           FontSize + 12,
+                           NULL,
+                           NULL,
+                           NULL
+                           );
+  if (EFI_ERROR (Status)) {
+    QrLogTrace ("[QRA] progress hint -> %r\r\n", Status);
+  }
+  (VOID)mSWMProtocol->BltWindow(mSWMProtocol,mImageHandle,mQrProgressOut->Image.Bitmap,
+    EfiBltBufferToVideo,0,0,X,Y,mQrProgressOut->Width,mQrProgressOut->Height,
+    (UINTN)mQrProgressOut->Width*sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL));
+}
+
+/**
+  Wipe the symbol off the content area.
+
+  SWM has no "destroy window" call - a client owns exactly one window for its
+  lifetime - so the code is removed the same way it was drawn: a full-area fill
+  through BltWindow. Going through SWM instead of mGop->Blt matters, because SWM
+  keeps its own copy of the window and would repaint the stale pixels on the next
+  compose, which is what left the code on screen after the stream stopped.
+**/
+STATIC
+VOID
+QrLogClearArea (
+  VOID
+  )
+{
+  if (mSWMProtocol == NULL) {
+    return;
+  }
+
+  mSWMProtocol->BltWindow (
+                  mSWMProtocol,
+                  mImageHandle,
+                  &gMsColorTable.MasterFrameBackgroundColor,
+                  EfiBltVideoFill,
+                  0,
+                  0,
+                  mMasterFrameWidth,
+                  mTitleBarHeight,
+                  mBootHorizontalResolution - mMasterFrameWidth,
+                  mBootVerticalResolution - mTitleBarHeight,
+                  0
+                  );
+
+  //
+  // The counter lives in the same window, so the fill above takes it with it.
+  // Free the surface we allocated for the text; the next stream allocates a
+  // fresh one.
+  //
+  if (mQrProgressOut != NULL) {
+    if (mQrProgressOut->Image.Bitmap!=NULL) FreePool(mQrProgressOut->Image.Bitmap);
+    FreePool (mQrProgressOut);
+    mQrProgressOut = NULL;
   }
 }
 
 /**
-  Draw the LOG page in auto-play mode.
-
-  Same content as ShowLogQrPage, but framed for a scanner that is already running:
+  Draw the LOGAUTO page for a scanner that is already running:
   every packet carries its own index, and the first one also carries the total, so the
   receiver knows where it is without any interaction on the device.
 
@@ -819,18 +1035,22 @@ QrLogWaitForEnter (
   byte mode and the receiver reads decoded bytes rather than text, so a 0x00 inside
   the log does not truncate anything.
 
-  Packets advance every 400 ms and the sequence ends on its own.
+  Packets advance after 4 s for the first one and 250 ms for the rest, and the
+  sequence ends on its own.
 **/
 STATIC
 VOID
 ShowLogQrAuto (
-  VOID
+  BOOLEAN Stored
   )
 {
   EFI_STATUS                         Status;
   EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *SimpleTextInEx;
   CHAR8                              *LogBuffer;
+  CHAR8                              *LogData;
   UINTN                              LogLength;
+  UINTN                              Prefix;
+  BOOLEAN                            CurrentSnapshot;
   UINTN                              Payload0;
   UINTN                              Rest;
   UINTN                              Total;
@@ -838,16 +1058,18 @@ ShowLogQrAuto (
   UINTN                              Offset;
   UINTN                              Chunk;
   UINT8                              Packet[QR_MAX_BYTES];
+  BOOLEAN                            Aborted;
 
   if (mSWMProtocol == NULL) {
     return;
   }
 
   SerialPortInitialize ();
+  FirmwareSuppressPower(500);
 
   //
-  // Same keypad console source the LOG page reads, used here only to discard
-  // key repeats that pile up while the packets play.
+  // Same keypad console source the LOG page reads. It now does two things: end the
+  // stream early when Enter is pressed, and discard whatever else was pressed.
   //
   SimpleTextInEx = NULL;
   if (gST->ConsoleInHandle != NULL) {
@@ -858,15 +1080,35 @@ ShowLogQrAuto (
            );
   }
 
-  LogBuffer = AllocateZeroPool (BOOT_LOG_MAX_BYTES);
+  // Reserve display metadata outside the 256KiB snapshot buffer.
+  LogBuffer = AllocateZeroPool (BOOT_LOG_MAX_BYTES + 192);
   if (LogBuffer == NULL) {
     return;
   }
 
-  Status = BootLogRead (LogBuffer, BOOT_LOG_MAX_BYTES, &LogLength);
+  LogLength = BOOT_LOG_MAX_BYTES;
+  LogData = LogBuffer + 192;
+  CurrentSnapshot = FALSE;
+  if (!Stored) (VOID)BootLogSave ("gui-logauto");
+  Status = Stored ? BootLogReadStored (LogData, &LogLength, TRUE) :
+    BootLogRead (LogData, BOOT_LOG_MAX_BYTES, &LogLength);
+  // The first successful save has no previous boot. Verify/read its current
+  // slot so persistence can be tested immediately; never hide CRC/I/O errors.
+  if (Stored && Status == EFI_NOT_FOUND) {
+    LogLength = BOOT_LOG_MAX_BYTES;
+    Status = BootLogReadStored (LogData, &LogLength, FALSE);
+    CurrentSnapshot = (BOOLEAN)!EFI_ERROR (Status);
+  }
   if (EFI_ERROR (Status) || (LogLength == 0)) {
-    CopyMem (LogBuffer, "QR LOG: NO LOG", sizeof ("QR LOG: NO LOG") - 1);
-    LogLength = sizeof ("QR LOG: NO LOG") - 1;
+    LogLength = AsciiSPrint (LogBuffer, BOOT_LOG_MAX_BYTES + 192,
+      "QR LOG b327: %a -> %r\n%a\n",
+      Stored ? (Status == EFI_NOT_FOUND ? "no Mu snapshot saved in logfs yet" : "logfs verify/mount/read failed") : "RAM log unavailable",
+      Status, Stored ? "Use QR Log for the current RAM log and LOGFS failure stage." : "No RAM log bytes available.");
+  } else {
+    Prefix = Stored ? AsciiSPrint (LogBuffer, 192, "LOGREAD b327: %a; size + header/payload CRC verified.\n",
+      CurrentSnapshot ? "no previous boot; current saved snapshot" : "previous saved snapshot") : 0;
+    CopyMem (LogBuffer + Prefix, LogData, LogLength);
+    LogLength += Prefix;
   }
 
   //
@@ -882,8 +1124,10 @@ ShowLogQrAuto (
     LogLength = Payload0 + 254 * (QR_MAX_BYTES - 1);
   }
 
-  QrLogTrace ("[QRA] %u bytes -> %u packets\r\n", LogLength, Total);
+  QrLogTrace ("[QRA] %u bytes -> %u packets (Enter ends it)\r\n", LogLength, Total);
 
+  Aborted = FALSE;
+  QrLogClearArea ();
   for (Index = 0, Offset = 0; Index < Total; Index++) {
     if (Index == 0) {
       Chunk     = MIN (QR_MAX_BYTES - 2, LogLength - Offset);
@@ -904,9 +1148,9 @@ ShowLogQrAuto (
                mSWMProtocol,
                mImageHandle,
                mMasterFrameWidth,
-               mTitleBarHeight,
+            mTitleBarHeight+2*(MsUiGetMediumFontHeight()+12)+80,
                mBootHorizontalResolution - mMasterFrameWidth,
-               mBootVerticalResolution - mTitleBarHeight,
+            mBootVerticalResolution-mTitleBarHeight-2*(MsUiGetMediumFontHeight()+12)-80,
                Packet,
                Chunk,
                0
@@ -916,10 +1160,56 @@ ShowLogQrAuto (
       break;
     }
 
-    gBS->Stall (400 * 1000);
+    //
+    // Drawn after the code so it sits above the white field, never under it.
+    //
+    QrLogShowProgress (Index + 1, Total);
+
+    //
+    // The first page stays up for four seconds, the rest for 250 ms.
+    //
+    // The camera needs a moment to lock focus and settle the exposure before it
+    // will decode anything at all, so packet 0 is given the long window. Once
+    // the phone is pointed and focused, 250 ms per page is what the receiver
+    // keeps up with in practice - 150 ms was tried and it dropped frames, 400 ms
+    // worked but made a 115 page transfer take nearly a minute.
+    //
+    // The wait is sliced at 50 ms so Enter can cut the stream short. A single Stall
+    // would leave no chance to press anything, which is what made a 255 packet
+    // transfer impossible to stop once it started.
+    //
+    {
+      UINTN  Remaining = (Index == 0) ? (4 * 1000 * 1000) : (250 * 1000);
+
+      while (Remaining > 0) {
+        UINTN  Step = MIN ((UINTN)(50 * 1000), Remaining);
+
+        gBS->Stall (Step);
+        Remaining -= Step;
+
+        if (QrLogEnterPressed (SimpleTextInEx)) {
+          Aborted = TRUE;
+          break;
+        }
+      }
+    }
+
+    if (Aborted) {
+      QrLogTrace ("[QRA] ended by Enter at packet %u of %u\r\n", Index, Total);
+      break;
+    }
   }
 
   FreePool (LogBuffer);
+
+  //
+  // Take the code off the screen before anything else redraws. This has to go
+  // through SWM: mGop->Blt below writes the framebuffer directly, and SWM would
+  // then compose its stale copy of the window back over it, leaving the last
+  // page visible after the stream stopped.
+  //
+  QrLogClearArea ();
+  FirmwareSuppressPower(500);
 
   //
   // Nothing consumed input during the stream; drop whatever was pressed while
@@ -927,180 +1217,6 @@ ShowLogQrAuto (
   //
   if (SimpleTextInEx != NULL) {
     QrLogDrainInput (SimpleTextInEx);
-  }
-
-  RenderTitlebar ();
-  RenderMasterFrame ();
-}
-
-/**
-  Draw the LOG page: the log text is split into pages, each rendered as a QR
-  symbol. The pages rotate on Enter (the power key is mapped to Enter):
-  1 -> 2 -> ... -> last page -> the window closes and the menu comes back.
-
-  Drawn through the Simple Window Manager (BltWindow) rather than the form
-  browser because the content is produced on the device; HII images would have
-  to be baked in at build time.
-**/
-STATIC
-VOID
-ShowLogQrPage (
-  VOID
-  )
-{
-  EFI_STATUS                         Status;
-  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *SimpleTextInEx;
-  LIST_ENTRY                         Queue;
-  LIST_ENTRY                         *Entry;
-  QR_LOG_PAGE                        *Page;
-  UINTN                              PageIndex;
-  CHAR8                              *LogBuffer;
-  UINTN                              LogLength;
-  UINTN                              Offset;
-  UINTN                              Chunk;
-  UINTN                              Index;
-  CHAR8                              PageText[QR_MAX_BYTES + 1];
-
-  if (mSWMProtocol == NULL) {
-    return;
-  }
-
-  //
-  // Idempotent; guarantees the console position exists before the first
-  // SerialPortWrite below (a module that never wrote yet has p_Position NULL).
-  //
-  SerialPortInitialize ();
-
-  //
-  // The console input device is the keypad driver; it delivers the power key
-  // as Enter. This is the same source the display engine reads.
-  //
-  SimpleTextInEx = NULL;
-  if (gST->ConsoleInHandle != NULL) {
-    gBS->HandleProtocol (
-           gST->ConsoleInHandle,
-           &gEfiSimpleTextInputExProtocolGuid,
-           (VOID **)&SimpleTextInEx
-           );
-  }
-
-  //
-  // Build the page queue (a linked list): the real boot log from the ring,
-  // split into chunks of at most QR_MAX_BYTES so each page fits version 10.
-  //
-  InitializeListHead (&Queue);
-
-  LogBuffer = AllocateZeroPool (BOOT_LOG_MAX_BYTES);
-  if (LogBuffer == NULL) {
-    QrLogAddPage (&Queue, "QR LOG: OUT OF MEMORY");
-  } else {
-    Status = BootLogRead (LogBuffer, BOOT_LOG_MAX_BYTES, &LogLength);
-    if (EFI_ERROR (Status) || (LogLength == 0)) {
-      QrLogTrace ("[QR] no boot log: %r len=%u\r\n", Status, LogLength);
-      QrLogAddPage (&Queue, "QR LOG: NO LOG");
-    } else {
-      QrLogTrace ("[QR] boot log %u bytes\r\n", LogLength);
-
-      for (Offset = 0; Offset < LogLength; ) {
-        Chunk = MIN (QR_MAX_BYTES, LogLength - Offset);
-
-        //
-        // Prefer a line end inside the last 48 bytes so pages read as whole
-        // lines; anything above 3/4 of the capacity still makes progress.
-        //
-        if (Chunk == QR_MAX_BYTES) {
-          for (Index = QR_MAX_BYTES; Index > QR_MAX_BYTES - 48; Index--) {
-            if (LogBuffer[Offset + Index - 1] == '\n') {
-              Chunk = Index;
-              break;
-            }
-          }
-        }
-
-        CopyMem (PageText, LogBuffer + Offset, Chunk);
-        PageText[Chunk] = '\0';
-        QrLogAddPage (&Queue, PageText);
-        Offset += Chunk;
-      }
-    }
-
-    FreePool (LogBuffer);
-  }
-
-  if (IsListEmpty (&Queue)) {
-    return;
-  }
-
-  //
-  // The Enter that opened the LOG entry may still be buffered; drop it so the
-  // first page is not skipped immediately.
-  //
-  if (SimpleTextInEx != NULL) {
-    QrLogDrainInput (SimpleTextInEx);
-  }
-
-  PageIndex = 0;
-  for (Entry = GetFirstNode (&Queue); !IsNull (&Queue, Entry); Entry = GetNextNode (&Queue, Entry)) {
-    Page = BASE_CR (Entry, QR_LOG_PAGE, Link);
-    PageIndex++;
-
-    //
-    // Lay out inside the content area, below the title bar and right of the master
-    // frame. BltWindow is confined to this image's window, so drawing relative to
-    // the full screen overflowed it once a page needed a larger QR version.
-    //
-    Status = QrPaint (
-               mSWMProtocol,
-               mImageHandle,
-               mMasterFrameWidth,
-               mTitleBarHeight,
-               mBootHorizontalResolution - mMasterFrameWidth,
-               mBootVerticalResolution - mTitleBarHeight,
-               Page->Text,
-               0
-               );
-    if (EFI_ERROR (Status)) {
-      //
-      // One bad page must not end the rotation: keep going so the remaining
-      // log is still reachable.
-      //
-      QrLogTrace ("[QR] page %u paint failed: %r\r\n", PageIndex, Status);
-      continue;
-    }
-
-    DEBUG ((DEBUG_INFO, "%a page %u: %a\n", __FUNCTION__, PageIndex, Page->Text));
-
-    if (SimpleTextInEx != NULL) {
-      Status = QrLogWaitForEnter (SimpleTextInEx);
-      if (EFI_ERROR (Status)) {
-        DEBUG ((DEBUG_ERROR, "%a key wait failed. Status = %r\n", __FUNCTION__, Status));
-        break;
-      }
-
-      //
-      // Drop repeats from the held button so one press advances exactly one
-      // page, then let the button settle so the release does not register as
-      // the next press.
-      //
-      QrLogDrainInput (SimpleTextInEx);
-      gBS->Stall (500 * 1000);
-    } else {
-      //
-      // No key source: hold each page briefly so the feature still works.
-      //
-      gBS->Stall (3 * 1000 * 1000);
-    }
-  }
-
-  //
-  // Window closed. Free the queue, then restore the title bar and master frame
-  // the white field wiped - the browser only repaints the form area, so the
-  // chrome has to be redrawn before the menu is shown again.
-  //
-  while (!IsListEmpty (&Queue)) {
-    Entry = GetFirstNode (&Queue);
-    RemoveEntryList (Entry);
-    FreePool (BASE_CR (Entry, QR_LOG_PAGE, Link));
   }
 
   RenderTitlebar ();
@@ -1170,51 +1286,59 @@ CallFrontPage (
   //
   // The LOG entry is not an HII form: draw it here and go back to the menu.
   //
-  if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_DIAG) {
-    FpDiagDump ();
-
+  if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_FILES ||
+      mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_POWER_STATUS) {
+    if (mOSKProtocol != NULL) {
+      mOSKProtocol->ShowKeyboard (mOSKProtocol, FALSE);
+      mOSKProtocol->ShowKeyboardIcon (mOSKProtocol, FALSE);
+    }
+    if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_FILES) FpFileBrowser (mSWMProtocol, mGop);
+    else FpPowerStatus (mSWMProtocol, mGop);
     mTerminateFrontPage = FALSE;
-    mCurrentFormIndex   = 0;
-    Status              = EFI_SUCCESS;
-    goto Exit;
-  }
-
-  if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_LOGAUTO) {
-    ShowLogQrAuto ();
-
-    //
-    // Same reason as the LOG branch below: this path never reaches the form
-    // browser, so it has to clear the loop flag and leave a real form selected.
-    //
-    mTerminateFrontPage = FALSE;
-    mCurrentFormIndex   = 0;
-    Status              = EFI_SUCCESS;
-    goto Exit;
-  }
-
-  if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_LOG) {
-    ShowLogQrPage ();
-
-    //
-    // The main loop sets mTerminateFrontPage = TRUE before every CallFrontPage and
-    // only the UI notification clears it when the user picks another cell. This
-    // path bypasses the browser entirely, so it has to clear the flag itself or
-    // FrontPage exits and BDS falls through to the next boot option.
-    //
-    mTerminateFrontPage = FALSE;
-
-    //
-    // Leave mCurrentFormIndex pointing at a real form. If it stays on the LOG
-    // entry, the main loop re-enters this branch immediately and repaints forever:
-    // the menu becomes unusable and the screen never settles.
-    //
     mCurrentFormIndex = 0;
-    Status            = EFI_SUCCESS;
+    Status = EFI_SUCCESS;
     goto Exit;
+  }
+
+  if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_LOGAUTO ||
+      mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_LOGREAD) {
+    ShowLogQrAuto (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_LOGREAD);
+
+    //
+    // This path bypasses the form browser. Clear the loop flag and leave a
+    // real form selected so the menu remains usable after LOGAUTO closes.
+    //
+    mTerminateFrontPage = FALSE;
+    mCurrentFormIndex   = 0;
+    Status              = EFI_SUCCESS;
+    goto Exit;
+  }
+
+  if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_REFRESH_LOG) {
+    SWM_MB_RESULT Result;
+    CHAR16 Message[192];
+    EFI_STATUS Saved=BootLogSave ("gui-refresh-log");
+    UnicodeSPrint(Message,sizeof(Message),EFI_ERROR(Saved)?
+      L"Log save failed: %r. QR Log shows the LOGFS failure stage.":L"Current log saved to logfs (%r).",Saved);
+    SwmDialogsMessageBox(L"Refresh Log",Message,L"",SWM_MB_OK,0,&Result);
+    mTerminateFrontPage=FALSE;mCurrentFormIndex=0;Status=EFI_SUCCESS;goto Exit;
+  }
+
+  if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_RETURN_BOOT) {
+    if (mOSKProtocol != NULL) { mOSKProtocol->ShowKeyboard (mOSKProtocol, FALSE);mOSKProtocol->ShowKeyboardIcon (mOSKProtocol, FALSE); }
+    if (mSWMProtocol != NULL) mSWMProtocol->EnableMousePointer (mSWMProtocol, FALSE);
+    if (gST != NULL && gST->ConOut != NULL) gST->ConOut->EnableCursor (gST->ConOut, FALSE);
+    FpBootMenuShow (mSWMProtocol, mGop, gImageHandle, FALSE);RenderTitlebar ();RenderMasterFrame ();
+    mTerminateFrontPage = FALSE;mCurrentFormIndex = 0;Status = EFI_SUCCESS;goto Exit;
   }
 
   // Call the browser to display the selected form.
   //
+  if (mFormMap[Count].FormId==FRONT_PAGE_FORM_ID_USB) {
+    CHAR16 ModeText[128];
+    FpGetUsbModeText(ModeText,sizeof(ModeText));
+    HiiSetString(mFrontPagePrivate.HiiHandle,STRING_TOKEN(STR_USB_CURRENT_MODE),ModeText,NULL);
+  }
   Status = mFormBrowser2->SendForm (
                             mFormBrowser2,
                             Handles,
@@ -1225,16 +1349,22 @@ CallFrontPage (
                             &ActionRequest
                             );
 
-  // If the user selected the "Restart now" button to exit the Frontpage, set the exit flag.
-  //
-  if (ActionRequest == EFI_BROWSER_ACTION_REQUEST_EXIT) {
-    mTerminateFrontPage = TRUE;
-  }
-
-  // Check whether user change any option setting which needs a reset to be effective
-  //
-  if (ActionRequest == EFI_BROWSER_ACTION_REQUEST_RESET) {
-    mResetRequired = TRUE;
+  // SendForm consumes callback EXIT internally and exports only NONE/RESET
+  // (SetupBrowserDxe/Setup.c). Dispatch our pending confirmed target directly.
+  // Falling through would return to BDS and launch the local LinuxLoader menu.
+  FpApplyUsbMode ();
+  if (FpRebootPending ()) {
+    SWM_MB_RESULT Result;
+    EFI_STATUS ResetStatus = FpRebootSelected ();
+    QrLogTrace ("[REBOOT b327] returned -> %r\r\n", ResetStatus);
+    mTerminateFrontPage = FALSE;
+    mResetRequired = FALSE;
+    CHAR16 Message[256];
+    FpRebootErrorText(Message,sizeof(Message),ResetStatus);
+    SwmDialogsMessageBox (L"Restart", Message, L"", SWM_MB_OK, 0, &Result);
+  } else {
+    if (ActionRequest == EFI_BROWSER_ACTION_REQUEST_EXIT) mTerminateFrontPage = TRUE;
+    if (ActionRequest == EFI_BROWSER_ACTION_REQUEST_RESET) mResetRequired = TRUE;
   }
 
 Exit:
@@ -1735,6 +1865,52 @@ NotifyUserOfAlerts (
   @retval   None.
 
 **/
+
+#ifdef SHENNONG_TOUCH_GESTURES
+STATIC UIT_TOUCH_GESTURE mMenuTap;
+#endif
+
+STATIC OBJECT_STATE
+FpTopMenuInput (SWM_INPUT_STATE *Input, VOID **Context)
+{
+#ifdef SHENNONG_TOUCH_GESTURES
+  UINTN I, Target = 0;
+  UINT64 X, Y;
+  UIT_TAP_RESULT Tap;
+  SWM_INPUT_STATE Press;
+  if (Context != NULL) *Context = NULL;
+  if (Input->InputType != SWM_INPUT_TYPE_TOUCH) {
+    ZeroMem (&mMenuTap, sizeof (mMenuTap));
+    return mTopMenu->Base.Draw (mTopMenu, TRUE, Input, Context);
+  }
+  X = Input->State.TouchState.CurrentX;
+  Y = Input->State.TouchState.CurrentY;
+  for (I = 0; I < mTopMenu->m_NumberOfCells; I++) {
+    SWM_RECT *B = &mTopMenu->m_pCells[I].CellBounds;
+    if (X >= B->Left && X <= B->Right && Y >= B->Top && Y <= B->Bottom) {
+      Target = I + 1;
+      break;
+    }
+  }
+  Tap = UitTouchTap (&mMenuTap, SWM_IS_FINGER_DOWN (Input->State.TouchState), Target, X, Y,
+                    GetTimeInNanoSecond (GetPerformanceCounter ()) / 1000000,
+                    MsUiScaleByTheme (24));
+  if (Target != 0 && ((!mMenuTap.Cancelled && mMenuTap.Down) || Tap == UitTapFocus)) {
+    mTopMenu->m_SelectedCell = (UINT32)(Target - 1);
+    mTopMenu->m_HighlightedCell = (UINT32)(Target - 1);
+    mTopMenu->m_State = NORMAL;
+    mTopMenu->Base.Draw (mTopMenu, TRUE, NULL, NULL);
+  }
+  if (Tap != UitTapConfirm) return NORMAL;
+  Press = *Input;
+  Press.State.TouchState.ActiveButtons |= 1;
+  mTopMenu->Base.Draw (mTopMenu, TRUE, &Press, NULL);
+  return mTopMenu->Base.Draw (mTopMenu, TRUE, Input, Context);
+#else
+  return mTopMenu->Base.Draw (mTopMenu, TRUE, Input, Context);
+#endif
+}
+
 VOID
 EFIAPI
 MasterFrameNotifyCallback (
@@ -1754,7 +1930,7 @@ MasterFrameNotifyCallback (
     mTopMenu->Base.Draw (
                      mTopMenu,
                      mDisplayEngineState.ShowTopMenuHighlight,
-                     &mDisplayEngineState.InputState,
+                     NULL, // Painting must not replay an old touch into the control.
                      &pSelectionContext
                      );
 
@@ -1774,12 +1950,7 @@ MasterFrameNotifyCallback (
   {
     // Draw the top-level menu in the master frame.
     //
-    MenuState = mTopMenu->Base.Draw (
-                                 mTopMenu,
-                                 mDisplayEngineState.ShowTopMenuHighlight,
-                                 &mDisplayEngineState.InputState,
-                                 &pSelectionContext
-                                 );
+    MenuState = FpTopMenuInput (pInputState, &pSelectionContext);
 
     // If nothing was selected (user may simply have moved the highlighted cell), there's no action to take.
     //
@@ -1974,121 +2145,160 @@ ProcessBootNext (
   this is the platform reference part and can be customize.
 **/
 
-//
-// PORT: start the DWC3 peripheral controller here, not in a DXE driver.
-//
-// UsbDeviceDxe opens EFI_USBFN_IO_PROTOCOL once during its init and caches the
-// failure forever. Every attempt made from an APRIORI driver still reports
-// NOT_FOUND, because USBFN_IO is only published later - by the time this
-// application runs it is present (see the '[FP] UsbfnIo present' line above).
-//
-// So force UsbDeviceDxe to re-run its init now, then start the controller.
-// Descriptors are plain byte arrays: a host only needs the device and
-// configuration descriptors to enumerate, so one vendor-specific interface with
-// zero endpoints is enough to prove the PHY, the pull-up and the packet path.
-//
-STATIC CONST UINT8  mFpUsbDevDesc[] = {
-  0x12, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x40,
-  0xC6, 0x05, 0x08, 0x90, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01
-};
-
-STATIC CONST UINT8  mFpUsbCfgSet[] = {
-  0x09, 0x02, 0x12, 0x00, 0x01, 0x01, 0x00, 0x80, 0x32,
-  0x09, 0x04, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00
-};
-
-STATIC CONST UINT8  mFpUsbQual[] = {
-  0x0A, 0x06, 0x00, 0x02, 0x00, 0x00, 0x00, 0x40, 0x01, 0x00
-};
-
-STATIC CONST UINT8  mFpUsbBos[] = { 0x05, 0x0F, 0x05, 0x00, 0x00 };
-
-STATIC
-VOID
-FpSayF (
-  IN CONST CHAR8  *Fmt,
-  IN UINTN        Value
-  )
+// The test protocol owns the controller and its direct descriptor/event pump.
+// Do not reconnect the vendor stack or force RUN_STOP behind that owner's back.
+STATIC UINT32 mUsbPending = MAX_UINT32;
+STATIC UINT32 mRamSizePending=MAX_UINT32;
+VOID FpGetRamSizeText (CHAR16 *Text, UINTN Bytes)
 {
-  CHAR8  Buf[96];
-  UINTN  Len;
-
-  Len = AsciiSPrint (Buf, sizeof (Buf), Fmt, Value);
-  SerialPortInitialize ();
-  SerialPortWrite ((UINT8 *)Buf, Len);
+  EFI_GUID Guid=USB_BRINGUP_PROTOCOL_GUID;USB_BRINGUP_PROTOCOL *Usb=NULL;
+  UINT32 MiB=512;BOOLEAN Allocated=FALSE;
+  if (!EFI_ERROR(gBS->LocateProtocol(&Guid,NULL,(VOID **)&Usb)) && Usb!=NULL && Usb->Revision>=5 && Usb->GetRamSize!=NULL)
+    (VOID)Usb->GetRamSize(Usb,&MiB,&Allocated);
+  if (mRamSizePending!=MAX_UINT32) MiB=mRamSizePending;
+  UnicodeSPrint(Text,Bytes,L"%u",MiB);
 }
-
-STATIC
-VOID
-FpTryStartUsb (
-  VOID
-  )
+EFI_STATUS FpQueueRamSize (CONST CHAR16 *Text)
 {
-  EFI_STATUS               Status;
-  EFI_USB_DEVICE_PROTOCOL  *UsbDevice;
-  EFI_HANDLE               *Handles;
-  UINTN                    Count;
-  UINT32                   Dcfg;
-  UINT32                   Dctl;
-  UINT32                   Dsts;
-  CHAR8                    Reg[128];
-  UINTN                    RegLen;
-
-  UsbDevice = NULL;
-  Status    = gBS->LocateProtocol (&gEfiUsbDeviceProtocolGuid, NULL, (VOID **)&UsbDevice);
-  if (EFI_ERROR (Status)) {
-    FpSayF ("[FP] no UsbDevice (%r)\n", (UINTN)Status);
-    return;
+  UINT32 MiB=0;UINTN I;EFI_STATUS Status=EFI_INVALID_PARAMETER;
+  if (Text==NULL) return EFI_INVALID_PARAMETER;
+  for (I=0;I<5 && Text[I]!=0;I++) {
+    if (Text[I]<'0' || Text[I]>'9' || I==4) goto Done;
+    MiB=MiB*10+(Text[I]-'0');
+  }
+  if (I>=2 && I<=4 && MiB>=64 && MiB<=2048) { mRamSizePending=MiB;Status=EFI_SUCCESS; }
+Done:
+  return Status;
+}
+EFI_STATUS FpRouteRamSize (CONST CHAR16 *Text)
+{
+  // CHANGED already saved the confirmed edit. A later browser submission may
+  // contain the old extracted size and must not replace that request.
+  return mRamSizePending!=MAX_UINT32?EFI_SUCCESS:FpQueueRamSize(Text);
+}
+VOID FpGetUsbModeText (CHAR16 *Text, UINTN Bytes)
+{
+  EFI_GUID Guid=USB_BRINGUP_PROTOCOL_GUID;
+  USB_BRINGUP_PROTOCOL *Usb=NULL;
+  UINT32 Mode=USB_MODE_DISABLED;
+  BOOLEAN Configured=FALSE;
+  CONST CHAR16 *Name;
+  if (EFI_ERROR(gBS->LocateProtocol(&Guid,NULL,(VOID **)&Usb)) ||
+      Usb==NULL || Usb->Revision<5 || Usb->GetMode==NULL ||
+      EFI_ERROR(Usb->GetMode(Usb,&Mode,&Configured))) {
+    UnicodeSPrint(Text,Bytes,L"Current mode: unavailable");return;
+  }
+  switch (Mode) {
+    case USB_MODE_NATIVE: Name=L"USB link";break;
+    case USB_MODE_STORAGE: Name=L"logfs (read only)";break;
+    case USB_MODE_CDC: Name=L"CDC serial";break;
+    case USB_MODE_RAMDISK: Name=L"RAM disk";break;
+    default: Name=L"Disabled";break;
+  }
+  if (Mode==USB_MODE_DISABLED) UnicodeSPrint(Text,Bytes,L"Current mode: %s",Name);
+  else UnicodeSPrint(Text,Bytes,L"Current mode: %s (%s)",Name,
+    Configured?L"connected":L"waiting for host");
+}
+EFI_STATUS FpQueueUsbMode (EFI_QUESTION_ID QuestionId)
+{
+  EFI_GUID Guid = USB_BRINGUP_PROTOCOL_GUID;
+  USB_BRINGUP_PROTOCOL *Usb = NULL;
+  EFI_STATUS Status = gBS->LocateProtocol (&Guid, NULL, (VOID **)&Usb);
+  if (EFI_ERROR (Status)) return Status;
+  if (Usb == NULL || Usb->Revision < 3 || Usb->SelectMode == NULL) return EFI_UNSUPPORTED;
+  if ((QuestionId==FRONT_PAGE_ACTION_USB_RAM || QuestionId==FRONT_PAGE_ACTION_USB_RAM_OFF) && Usb->Revision<4)
+    return EFI_UNSUPPORTED;
+  switch (QuestionId) {
+    case FRONT_PAGE_ACTION_USB_NATIVE: mUsbPending=USB_MODE_NATIVE;break;
+    case FRONT_PAGE_ACTION_USB_STORAGE: mUsbPending=USB_MODE_STORAGE;break;
+    case FRONT_PAGE_ACTION_USB_CDC: mUsbPending=USB_MODE_CDC;break;
+    case FRONT_PAGE_ACTION_USB_DISABLE: mUsbPending=USB_MODE_DISABLED;break;
+    case FRONT_PAGE_ACTION_USB_REFRESH: mUsbPending=USB_MODE_REFRESH;break;
+    case FRONT_PAGE_ACTION_USB_RAM: mUsbPending=USB_MODE_RAMDISK;break;
+    case FRONT_PAGE_ACTION_USB_RAM_OFF: mUsbPending=USB_MODE_RAM_RELEASE;break;
+    default:return EFI_INVALID_PARAMETER;
+  }
+  QrLogTrace ("[USBMODE b339] action=%x pending=%u driver-rev=%lu\r\n", QuestionId, mUsbPending, Usb->Revision);
+  return EFI_SUCCESS;
+}
+UINT8 FpGetUsbUiMode (VOID)
+{
+  EFI_GUID Guid = USB_BRINGUP_PROTOCOL_GUID;
+  USB_BRINGUP_PROTOCOL *Usb = NULL;
+  UINT32 Mode = USB_MODE_DISABLED;
+  BOOLEAN Configured = FALSE;
+  if (!EFI_ERROR (gBS->LocateProtocol (&Guid, NULL, (VOID **)&Usb)) &&
+      Usb != NULL && Usb->Revision >= 5 && Usb->GetMode != NULL)
+  {
+    (VOID)Usb->GetMode (Usb, &Mode, &Configured);
   }
 
-  //
-  // Reconnect first: this re-runs UsbDeviceDxe's init, which is the only way to
-  // clear the cached 'USBFN_IO not found' from its first attempt.
-  //
-  Handles = NULL;
-  Count   = 0;
-  Status  = gBS->LocateHandleBuffer (ByProtocol, &gEfiUsbDeviceProtocolGuid, NULL, &Count, &Handles);
-  if (!EFI_ERROR (Status) && (Count > 0)) {
-    gBS->DisconnectController (Handles[0], NULL, NULL);
-    gBS->ConnectController (Handles[0], NULL, NULL, TRUE);
-    gBS->FreePool (Handles);
-
-    UsbDevice = NULL;
-    Status    = gBS->LocateProtocol (&gEfiUsbDeviceProtocolGuid, NULL, (VOID **)&UsbDevice);
-    if (EFI_ERROR (Status)) {
-      FpSayF ("[FP] UsbDevice gone after reconnect (%r)\n", (UINTN)Status);
-      return;
-    }
-
-    FpPortSay ("[FP] UsbDevice reconnected\n");
+  switch (Mode) {
+    case USB_MODE_STORAGE: return 1;
+    case USB_MODE_CDC:     return 2;
+    case USB_MODE_RAMDISK: return 3;
+    default:               return 0;
+  }
+}
+BOOLEAN FpGetRamAllocated (VOID)
+{
+  EFI_GUID Guid = USB_BRINGUP_PROTOCOL_GUID;
+  USB_BRINGUP_PROTOCOL *Usb = NULL;
+  UINT32 MiB = 0;
+  BOOLEAN Allocated = FALSE;
+  if (!EFI_ERROR (gBS->LocateProtocol (&Guid, NULL, (VOID **)&Usb)) &&
+      Usb != NULL && Usb->Revision >= 5 && Usb->GetRamSize != NULL)
+  {
+    (VOID)Usb->GetRamSize (Usb, &MiB, &Allocated);
   }
 
-  //
-  // The Start calls were removed on purpose.
-  //
-  // With the reconnect in place, Start no longer returns EFI_NOT_FOUND - it
-  // enters the real start path and then hangs. That is a hardware/NPA wait, not
-  // a protocol lookup, and a hang costs a reflash every time while telling us
-  // nothing. So stop here and look at the registers instead:
-  //
-  //   runstop still 0 after reconnect -> the reconnect is not the issue
-  //   runstop flips to 1               -> something else started it
-  //
-  Dcfg = MmioRead32 (0x0A600000 + 0xC700);
-  Dctl = MmioRead32 (0x0A600000 + 0xC704);
-  Dsts = MmioRead32 (0x0A600000 + 0xC70C);
-  RegLen = AsciiSPrint (
-             Reg,
-             sizeof (Reg),
-             "[FP] dwc3 after reconnect dctl=%08x runstop=%d dsts=%08x lnsts=%d\n",
-             Dctl,
-             Dctl & 1,
-             Dsts,
-             (Dsts >> 8) & 3
-             );
-  SerialPortWrite ((UINT8 *)Reg, RegLen);
+  return Allocated;
+}
+EFI_STATUS FpQueueUsbUiMode (UINT8 UiMode)
+{
+  UINT32 Mapped = USB_MODE_DISABLED;
+  switch (UiMode) {
+    case 0: mUsbPending = Mapped = USB_MODE_DISABLED; break;
+    case 1: mUsbPending = Mapped = USB_MODE_STORAGE; break;
+    case 2: mUsbPending = Mapped = USB_MODE_CDC;     break;
+    case 3: mUsbPending = Mapped = USB_MODE_RAMDISK; break;
+    default: return EFI_INVALID_PARAMETER;
+  }
 
-  FpPortSay ("[FP] USB start skipped (it hangs)\n");
+  QrLogTrace ("[USBMODE b336] queue ui=%u pending=%u\r\n", UiMode, Mapped);
+  return EFI_SUCCESS;
+}
+EFI_STATUS FpQueueRamDelete (VOID)
+{
+  // RAM_RELEASE makes the driver stop the active RAM device (DISABLED) before
+  // freeing pages; if the RAM disk is not currently owned by USB it only frees.
+  mUsbPending = USB_MODE_RAM_RELEASE;
+  return EFI_SUCCESS;
+}
+STATIC VOID FpApplyUsbMode (VOID)
+{
+  EFI_GUID Guid = USB_BRINGUP_PROTOCOL_GUID;
+  USB_BRINGUP_PROTOCOL *Usb = NULL;
+  EFI_STATUS Status;
+  SWM_MB_RESULT Result;
+  UINT32 Mode=mUsbPending;
+  if (Mode==MAX_UINT32 && mRamSizePending==MAX_UINT32) return;
+  mUsbPending=MAX_UINT32;
+  Status=gBS->LocateProtocol (&Guid,NULL,(VOID **)&Usb);
+  if (mRamSizePending!=MAX_UINT32) {
+    UINT32 MiB=mRamSizePending;mRamSizePending=MAX_UINT32;
+    if (!EFI_ERROR(Status)) Status=(Usb!=NULL && Usb->Revision>=5 && Usb->SetRamSize!=NULL)?Usb->SetRamSize(Usb,MiB):EFI_UNSUPPORTED;
+    QrLogTrace("[USBRAM b328] requested %u MiB -> %r\r\n",MiB,Status);
+    if (EFI_ERROR(Status)) SwmDialogsMessageBox(L"RAM disk",L"Size was not changed. Release the existing RAM disk first.",L"",SWM_MB_OK,0,&Result);
+    mTerminateFrontPage=FALSE;mResetRequired=FALSE;
+    if (Mode==MAX_UINT32 || EFI_ERROR(Status)) return;
+  }
+    if (!EFI_ERROR (Status)) Status=(Usb!=NULL && Usb->Revision>=3 && Usb->SelectMode!=NULL)?Usb->SelectMode(Usb,Mode):EFI_UNSUPPORTED;
+    else QrLogTrace ("[USBMODE b336] locate protocol -> %r; UI mode not applied\r\n", Status);
+  QrLogTrace ("[USBMODE b327] GUI mode=%u -> %r\r\n",Mode,Status);
+  mTerminateFrontPage=FALSE;mResetRequired=FALSE;
+  if (EFI_ERROR(Status) && Status!=EFI_ALREADY_STARTED)
+    SwmDialogsMessageBox (L"USB",L"USB mode could not start. See QR Log.",L"",SWM_MB_OK,0,&Result);
 }
 
 EFI_STATUS
@@ -2101,14 +2311,13 @@ UefiMain (
   EFI_STATUS  Status  = EFI_SUCCESS;
   UINT32      OSKMode = 0;
 
-  FpPortSay ("[FP] entry\n");
+  FpDetectVerbose ();
 
-  //
-  // Automatic post-dispatch snapshot, every boot. UFSDxe runs before this and
-  // publishes nothing, so this records what the world looks like after it had its
-  // chance; UfsPreDxe logs the same registers before it, which brackets the driver.
-  //
-  FpDiagDump ();
+  FpPortSay ("[FP b340] entry; Boot Menu, asynchronous Volume Up detection\n");
+
+  // Keep the automatic boot path short and do not replay I2C/USB tests while
+  // the window manager is being created. LOGAUTO saves then reads the RAM ring.
+  FpPortSay ("[FP b341] default USB CDC; power diagnostics available on demand\n");
 
   //
   // Late dispatch: the log shows '[DISP] dispatch complete' twice AFTER BDS
@@ -2152,54 +2361,12 @@ UefiMain (
   }
 
   //
-  // Read the DWC3 device controller directly.
+  // The DWC3 register dump and the start attempt moved into FpTryStartUsb, and
+  // that is now reached from the DIAG menu rather than from here. StartEx hangs,
+  // and calling it on the normal boot path left the machine stuck before the UI
+  // came up, which also made LOGAUTO unreachable - and LOGAUTO is how the log
+  // gets off the device at all.
   //
-  // Plugging the phone into a host produces nothing, and every protocol we can
-  // query is present, so stop asking the software layer and look at the
-  // hardware. Base 0x0A600000 per the platform map.
-  //
-  //   DCTL (0xC704) bit0       RWUSBCFG  - RunStop; 0 means the controller is
-  //                                        not running, so it never asserts the
-  //                                        pull-up and no host can see it
-  //   DSTS (0xC70C) bit0       SUSPEND
-  //                 bit1       USBRST
-  //                 bits6:4    ENUMSPD   - 0 HS, 1 FS, 2 LS, 3 SS
-  //                 bits9:8    DEVLNSTS  - 0 SE0 (not connected), 1 J, 2 K
-  //
-  // An earlier version read RunStop from bit30 and DSTS from 0xC710. Bit30 is
-  // not RWUSBCFG and 0xC710 is DGCMD, so both numbers were meaningless.
-  //
-  {
-    UINTN  UsbBase;
-    UINT32 Dctl;
-    UINT32 Dsts;
-    UINT32 Dcfg;
-    CHAR8  Reg[176];
-    UINTN  RegLen;
-
-    UsbBase = 0x0A600000;
-    Dcfg    = MmioRead32 (UsbBase + 0xC700);
-    Dctl    = MmioRead32 (UsbBase + 0xC704);
-    Dsts    = MmioRead32 (UsbBase + 0xC70C);
-
-    RegLen = AsciiSPrint (
-               Reg,
-               sizeof (Reg),
-               "[FP] dwc3 dcfg=%08x dctl=%08x runstop=%d dsts=%08x susp=%d rst=%d lnsts=%d spd=%d\n",
-               Dcfg,
-               Dctl,
-               Dctl & 1,
-               Dsts,
-               Dsts & 1,
-               (Dsts >> 1) & 1,
-               (Dsts >> 8) & 3,
-               (Dsts >> 4) & 7
-               );
-    SerialPortWrite ((UINT8 *)Reg, RegLen);
-  }
-
-  FpTryStartUsb ();
-
   // Delete BootNext if entry to BootManager.
   Status = gRT->SetVariable (
                   L"BootNext",
@@ -2292,13 +2459,6 @@ UefiMain (
     goto Exit;
   }
 
-  //
-  // Pre-GUI boot menu. It draws through the SWM (BltWindow + HII font) and
-  // scans the boot manager for entries on every boot; "Enter GUI" and the
-  // 10 second timeout both fall through to the FrontPage setup below.
-  //
-  FpBootMenuShow (mSWMProtocol, mGop, ImageHandle);
-
   // Locate the on-screen keyboard (OSK) protocol.
   //
   Status = gBS->LocateProtocol (
@@ -2327,10 +2487,15 @@ UefiMain (
   mOSKProtocol->ShowKeyboardIcon (mOSKProtocol, FALSE);
   mOSKProtocol->SetKeyboardMode (mOSKProtocol, OSKMode);
 
-  // Set keyboard size and position (75% of screen width, bottom-right corner, docked).
+  // Full width at the bottom; SetKeyboardSize transforms both drawing and hits.
   //
   mOSKProtocol->SetKeyboardSize (mOSKProtocol, FP_OSK_WIDTH_PERCENT);
-  mOSKProtocol->SetKeyboardPosition (mOSKProtocol, BottomRight, Docked);
+  mOSKProtocol->SetKeyboardPosition (mOSKProtocol, BottomCenter, Docked);
+
+  // First entry auto-opens the GUI after five seconds unless the user acts.
+  FpRemoteRegister(ImageHandle);
+  Status=FpBootMenuShow(mSWMProtocol,mGop,ImageHandle,TRUE);
+  if (EFI_ERROR(Status)) goto Exit;
 
   if (mGop != NULL) {
     //
@@ -2340,10 +2505,12 @@ UefiMain (
     mBootVerticalResolution   = mGop->Mode->Info->VerticalResolution;
   }
 
-  // Ensure screen is clear when switch Console from Graphics mode to Text mode
+  // Hide the text cursor, but do not ClearScreen: the Boot Menu already owns
+  // the whole framebuffer and clearing it produced the visible black frame on
+  // the BootMenu -> GUI transition. SWM and DisplayEngine paint every region
+  // they own immediately afterwards.
   //
   gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-  gST->ConOut->ClearScreen (gST->ConOut);
 
   // Initialize the Simple UI ToolKit.
   //
@@ -2375,6 +2542,13 @@ UefiMain (
   //
   mCurrentFormIndex = 0;
   Status            = EFI_SUCCESS;
+  {
+    EFI_STATUS Saved = BootLogSave ("gui-ready-tz-summary");
+    QrLogTrace ("[LOGSAVE b327] GUI checkpoint -> %r (logfs only)\r\n", Saved);
+  }
+  // Start CDC before entering the form loop, so no GUI action is needed.
+  mUsbPending = USB_MODE_CDC;
+  FpApplyUsbMode ();
 
   // Display the specified FrontPage form.
   //
@@ -2397,7 +2571,7 @@ UefiMain (
   UninitializeFrontPage ();
 
 Exit:
-
+  FpRemoteUnregister();
   return Status;
 }
 

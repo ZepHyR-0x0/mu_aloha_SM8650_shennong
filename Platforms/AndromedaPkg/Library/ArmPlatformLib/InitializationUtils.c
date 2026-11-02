@@ -10,6 +10,7 @@
 #include <Library/IoLib.h>
 #include <Library/PcdLib.h>
 #include <Library/SerialPortLib.h>
+#include <Library/FrameBufferSerialPortLib.h>
 
 #include <Library/MemoryMapHelperLib.h>
 #include <Library/PlatformPrePiLib.h>
@@ -29,6 +30,18 @@ VOID InitializeSharedUartBuffers(VOID)
 
   *(pFbConPosition + 0) = 0;
   *(pFbConPosition + 1) = 0;
+
+  // Reset only the screen policy on each boot, including fastboot boot.
+  // The log initialization below keeps its existing behavior.
+  if (DisplayMemoryRegion.Length >=
+      (UINTN)((UINT8 *)(pFbConPosition + 2) - (UINT8 *)(UINTN)DisplayMemoryRegion.Address) +
+      sizeof (FBCON_SCREEN_STATE)) {
+    FBCON_SCREEN_STATE *Screen =
+        (FBCON_SCREEN_STATE *)(pFbConPosition + 2);
+    Screen->Magic   = 0;
+    Screen->Verbose = FALSE;
+    Screen->Magic   = FBCON_SCREEN_STATE_MAGIC;
+  }
 #endif
 
 #if USE_MEMORY_FOR_SERIAL_OUTPUT == 1

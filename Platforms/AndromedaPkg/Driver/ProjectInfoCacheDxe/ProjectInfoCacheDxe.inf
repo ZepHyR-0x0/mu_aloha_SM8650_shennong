@@ -1,0 +1,24 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = ProjectInfoCacheDxe
+  FILE_GUID = C02929D1-146A-4D6B-9885-F2726CBCC322
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = ProjectInfoCacheEntry
+[Sources]
+  ProjectInfoCacheDxe.c
+  ProjectInfoCacheCore.h
+  ProjectInfoRows.h
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DxeServicesTableLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  SerialPortLib
+  PrintLib
+[Depex]
+  TRUE

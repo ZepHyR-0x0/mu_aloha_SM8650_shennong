@@ -1,7 +1,7 @@
 From 2ac1fbba5ad873c30aae3ea59be1646ac51bbbfe Mon Sep 17 00:00:00 2001
 From: HR_Z <2463882771@qq.com>
 Date: Fri, 23 Oct 2026 15:48:54 +0800
-Subject: [PATCH 10/10] PORT: probe the protocol GlinkDxe DEPEXes on (52858ad7)
+Subject: [PATCH 10/11] PORT: probe the protocol GlinkDxe DEPEXes on (52858ad7)
 
 It resolves in no .dec - Qualcomm internal, almost certainly QMI. The NPA client
 that SSUsbInitCommon needs is created over that transport, so its absence is the
@@ -42,3 +42,6 @@ index 6c39da1..bbdb406 100644
  }
  
  //
+-- 
+2.43.0
+

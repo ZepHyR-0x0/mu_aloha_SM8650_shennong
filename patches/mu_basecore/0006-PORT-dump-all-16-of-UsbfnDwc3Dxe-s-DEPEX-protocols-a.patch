@@ -1,7 +1,7 @@
 From d11505cd139fb7e137457e60c685b38e8a903d36 Mon Sep 17 00:00:00 2001
 From: HR_Z <2463882771@qq.com>
 Date: Fri, 23 Oct 2026 13:07:40 +0800
-Subject: [PATCH 06/10] PORT: dump all 16 of UsbfnDwc3Dxe's DEPEX protocols,
+Subject: [PATCH 06/11] PORT: dump all 16 of UsbfnDwc3Dxe's DEPEX protocols,
  and hold the screen
 
 EFI_USBFN_IO_PROTOCOL is absent, so UsbfnDwc3Dxe never dispatched. Its DEPEX has
@@ -134,3 +134,6 @@ index 809b5b1..cc2d96f 100644
    BootFwUi         = (BOOLEAN)((OsIndication & EFI_OS_INDICATIONS_BOOT_TO_FW_UI) != 0);
    PlatformRecovery = (BOOLEAN)((OsIndication & EFI_OS_INDICATIONS_START_PLATFORM_RECOVERY) != 0);
    //
+-- 
+2.43.0
+

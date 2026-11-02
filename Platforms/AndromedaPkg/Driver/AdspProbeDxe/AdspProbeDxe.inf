@@ -1,0 +1,45 @@
+## @file
+#  Identify GPT labels/types, validate bounded ELF32 MDT tables and required
+#  split-file sizes. Both ADSP and DTB must validate on the same volume.
+#  Basic Data may match multiple volumes; this does not prove PIL's selection.
+#  No partition writes, PIL loads, authentication or remote subsystem starts.
+#
+#  Prints through SerialPortWrite rather than DEBUG, like every other probe here.
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = AdspProbeDxe
+  FILE_GUID                      = 8f3a51c6-2d47-4b90-9e13-6a0c5f7d2b84
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = AdspProbeDxeInitialize
+
+[Sources.common]
+  AdspProbeDxe.c
+  AdspMdt.c
+  AdspMdt.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  PrintLib
+  SerialPortLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiBlockIoProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+  gEfiPartitionInfoProtocolGuid
+
+[Guids]
+  gEfiFileInfoGuid
+
+[Depex]
+  TRUE

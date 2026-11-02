@@ -1,0 +1,37 @@
+## @file
+#  A minimal PCD protocol, so PcdLib can be DxePcdLib again.
+#
+#  Without it, PcdLib has to be BasePcdLibNull, which stores nothing: every
+#  LibPcdSet* is a no-op and every LibPcdGet* asserts and returns 0. That silently
+#  broke the shared buffer between FrontPage and DisplayEngine, which travels
+#  through the DynamicEx PCD PcdCurrentPointerState.
+#
+#  It has to dispatch before anything that links DxePcdLib, so it sits at the very
+#  front of APRIORI.
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = PcdShimDxe
+  FILE_GUID                      = 6e1b0c74-3a52-4d8f-9b21-7f0e4c5a8d33
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = PcdShimDxeInitialize
+
+[Sources.common]
+  PcdShimDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiPcdProtocolGuid
+
+[Depex]
+  TRUE

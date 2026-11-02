@@ -1,7 +1,7 @@
 From 368e7f21ae4bc33b16b201db9655ac35db3a2344 Mon Sep 17 00:00:00 2001
 From: HR_Z <2463882771@qq.com>
 Date: Sat, 24 Oct 2026 18:10:27 +0800
-Subject: [PATCH 3/3] DisplayEngine: map a volume-key double tap to
+Subject: [PATCH 3/9] DisplayEngine: map a volume-key double tap to
  SCAN_LEFT/SCAN_RIGHT
 
 The phone has only volume up and volume down, so a form with more than one page of
@@ -108,3 +108,6 @@ index 2247ac5..afbb8f2 100644
            break;
          }
          case UIEventTouch:          // Touch/mouse event.
+-- 
+2.43.0
+

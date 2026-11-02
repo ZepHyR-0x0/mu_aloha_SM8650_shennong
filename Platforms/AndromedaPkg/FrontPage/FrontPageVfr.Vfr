@@ -115,6 +115,12 @@ formset
       data     = 70,                                                             // Grid cell height in pixels.
     endguidop;
         label LABEL_PCINFO_FW_VERSION_TAG_START;                                 // Firmware versions
+        // Keep this grid valid when no FMP protocol exists on the phone.
+        // HiiUpdateForm replaces the fallback if an inventory is available.
+        subtitle text = STRING_TOKEN(STR_NULL_STRING), flags = HORIZONTAL;
+          text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_INF_VIEW_FIRMWARE_HEADER);
+          text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_INF_VIEW_FIRMWARE_UNAVAILABLE);
+          text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
         label LABEL_PCINFO_FW_VERSION_TAG_END;                                   //
     guidop
       guid     = GRID_END_OPCODE_GUID,                                           // Custom UI Grid opcode - END
@@ -274,28 +280,34 @@ formset
       text    = STRING_TOKEN(STR_FP_RESTART_NOW_BUTTON),                                //
       flags   = INTERACTIVE | RESET_REQUIRED,
       key     = FRONT_PAGE_ACTION_EXIT_FRONTPAGE;
-  endform;
-
-  /////////////////////////////////////////////////////////////////////////////
-  // Form ID 5: LOG
-  //
-  // Drawn by FrontPage directly (QrCode.c), not by the form browser: the symbol is
-  // generated at run time and HII images are baked in at build time. This form only
-  // gives the menu entry a valid target.
-  //
-  form formid = FRONT_PAGE_FORM_ID_LOG,
-    title  = STRING_TOKEN(STR_NULL_STRING);
-
     text
       help    = STRING_TOKEN(STR_NULL_STRING),
-      text    = STRING_TOKEN(STR_MF_MENU_OP_LOG);
+      text    = STRING_TOKEN(STR_NULL_STRING);
+    text
+      help    = STRING_TOKEN(STR_NULL_STRING),
+      text    = STRING_TOKEN(STR_NULL_STRING);
+    text
+      help    = STRING_TOKEN(STR_NULL_STRING),
+      text    = STRING_TOKEN(STR_FP_RESTART_FASTBOOT_BUTTON),
+      flags   = INTERACTIVE,
+      key     = FRONT_PAGE_ACTION_REBOOT_FASTBOOT;
+    text
+      help    = STRING_TOKEN(STR_NULL_STRING),
+      text    = STRING_TOKEN(STR_NULL_STRING);
+    text
+      help    = STRING_TOKEN(STR_NULL_STRING),
+      text    = STRING_TOKEN(STR_NULL_STRING);
+    text
+      help    = STRING_TOKEN(STR_NULL_STRING),
+      text    = STRING_TOKEN(STR_FP_RESTART_RECOVERY_BUTTON),
+      flags   = INTERACTIVE,
+      key     = FRONT_PAGE_ACTION_REBOOT_RECOVERY;
   endform;
 
   /////////////////////////////////////////////////////////////////////////////
-  // Form ID 6: LOGAUTO
+  // Form ID 6: QR Log
   //
-  // Same page as LOG, drawn by FrontPage, but the packets advance on a timer instead
-  // of waiting for a key, so a scanner can run unattended.
+  // Drawn by FrontPage. Packets advance on a timer so a scanner can run unattended.
   //
   form formid = FRONT_PAGE_FORM_ID_LOGAUTO,
     title  = STRING_TOKEN(STR_NULL_STRING);
@@ -303,6 +315,42 @@ formset
     text
       help    = STRING_TOKEN(STR_NULL_STRING),
       text    = STRING_TOKEN(STR_MF_MENU_OP_LOGAUTO);
+  endform;
+
+
+  // USB submenu. HII callbacks only queue a mode; I/O runs after SendForm.
+  form formid = FRONT_PAGE_FORM_ID_USB,
+    title = STRING_TOKEN(STR_NULL_STRING);
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_USB_HEADER);
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_USB_HELP);
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_USB_CURRENT_MODE);
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
+    // An action carries the selected function in its question ID. Browser
+    // defaults/state reloads cannot replace it during form submission.
+    text help = STRING_TOKEN(STR_USB_MODE_HELP), text = STRING_TOKEN(STR_USB_LOGFS), flags = INTERACTIVE, key = FRONT_PAGE_ACTION_USB_STORAGE;
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
+    text help = STRING_TOKEN(STR_USB_MODE_HELP), text = STRING_TOKEN(STR_USB_CDC), flags = INTERACTIVE, key = FRONT_PAGE_ACTION_USB_CDC;
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
+    text help = STRING_TOKEN(STR_USB_MODE_HELP), text = STRING_TOKEN(STR_USB_RAMDISK), flags = INTERACTIVE, key = FRONT_PAGE_ACTION_USB_RAM;
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
+    text help = STRING_TOKEN(STR_USB_MODE_HELP), text = STRING_TOKEN(STR_USB_OFF), flags = INTERACTIVE, key = FRONT_PAGE_ACTION_USB_DISABLE;
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
+    grayoutif ideqval FrontPageUiControls.RamAllocated == 1;
+      string varid = FrontPageUiControls.RamMiB,
+        questionid = FRONT_PAGE_ACTION_RAM_SIZE,
+        prompt = STRING_TOKEN(STR_USB_RAM_SIZE),
+        help = STRING_TOKEN(STR_USB_RAM_SIZE_HELP),
+        flags = INTERACTIVE,
+        minsize = 2, maxsize = 4,
+      endstring;
+    endif;
+    text help = STRING_TOKEN(STR_NULL_STRING), text = STRING_TOKEN(STR_NULL_STRING);
+    grayoutif ideqval FrontPageUiControls.RamAllocated == 0;
+      text help = STRING_TOKEN(STR_USB_RAM_DELETE_HELP), text = STRING_TOKEN(STR_USB_RAM_DELETE), flags = INTERACTIVE, key = FRONT_PAGE_ACTION_USB_RAM_DELETE;
+    endif;
   endform;
 
 endformset;

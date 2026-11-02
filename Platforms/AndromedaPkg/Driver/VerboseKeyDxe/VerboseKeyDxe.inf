@@ -1,0 +1,39 @@
+## @file VerboseKeyDxe.inf
+#
+#  Turns on the framebuffer serial console when volume-up is held at boot.
+#
+#  Copyright (c) 2026, Project Mu port. SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = VerboseKeyDxe
+  FILE_GUID      = 97AC1AA5-D853-435D-8AB9-6FB1B0C0BF10
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = VerboseKeyInit
+
+[Sources]
+  VerboseKeyDxe.c
+  FirmwareInputCore.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  TimerLib
+  DevicePathLib
+  SerialPortLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiSimpleTextInputExProtocolGuid
+  gEfiSimpleTextInProtocolGuid
+
+[Depex]
+  gEfiSimpleTextInputExProtocolGuid
+

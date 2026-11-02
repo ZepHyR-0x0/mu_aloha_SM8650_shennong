@@ -11,6 +11,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #define _FRONT_PAGE_H_
 
 #include <Protocol/FormBrowser2.h>
+#include <Protocol/SimpleWindowManager.h>
 #include <Protocol/HiiConfigAccess.h>
 #include "FrontPageVfr.h"  // all shared VFR / C constants here.
 #include <DfciSystemSettingTypes.h>
@@ -27,6 +28,14 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 extern UINT8  FrontPageVfrBin[];
 
 extern UINTN  mCallbackKey;
+EFI_STATUS FpPrepareReboot (EFI_QUESTION_ID QuestionId);
+BOOLEAN FpRebootPending (VOID);
+VOID FpRebootErrorText (CHAR16 *Buffer, UINTN Bytes, EFI_STATUS Status);
+EFI_STATUS FpRebootSelected (VOID);
+UINT8 FpGetUsbUiMode (VOID);
+BOOLEAN FpGetRamAllocated (VOID);
+EFI_STATUS FpQueueUsbUiMode (UINT8 UiMode);
+EFI_STATUS FpQueueRamDelete (VOID);
 
 #define FRONT_PAGE_CALLBACK_DATA_SIGNATURE  SIGNATURE_32 ('F', 'P', 'C', 'B')
 
@@ -99,5 +108,21 @@ VOID
 FpDiagDump (
   VOID
   );
+
+VOID FpHealthReport (VOID);
+VOID FpFileBrowser (MS_SIMPLE_WINDOW_MANAGER_PROTOCOL *Swm, EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop);
+VOID FpPowerStatus (MS_SIMPLE_WINDOW_MANAGER_PROTOCOL *Swm, EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop);
+
+/** Deprecated heartbeat hook; returns zero and performs no I2C write. */
+UINT32
+FpDiagI2cReassert (
+  VOID
+  );
+
+EFI_STATUS FpQueueUsbMode (EFI_QUESTION_ID QuestionId);
+VOID FpGetRamSizeText (CHAR16 *Text, UINTN Bytes);
+VOID FpGetUsbModeText (CHAR16 *Text, UINTN Bytes);
+EFI_STATUS FpRouteRamSize (CONST CHAR16 *Text);
+EFI_STATUS FpQueueRamSize (CONST CHAR16 *Text);
 
 #endif // _FRONT_PAGE_H_

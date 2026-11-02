@@ -26,6 +26,7 @@
 
 #include <Library/BaseLib.h>
 #include <Library/SerialPortLib.h>
+#include <Library/FrameBufferSerialPortLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 
 #include <Protocol/DevicePath.h>
@@ -92,19 +93,34 @@ SerialTextOutputString (
   )
 {
   CHAR8  Buffer[128];
-  UINTN  Index;
+  UINTN  Index, Columns, Rows;
+  EFI_STATUS Status;
 
   if (String == NULL) {
     return EFI_INVALID_PARAMETER;
   }
+  Status = FbConTextGeometry (&Columns, &Rows);
+  if (EFI_ERROR (Status)) return Status;
 
   Index = 0;
   while (*String != L'\0') {
+    if (*String == L'\r') This->Mode->CursorColumn = 0;
+    else if (*String == L'\n') {
+      This->Mode->CursorColumn = 0;
+      if (++This->Mode->CursorRow >= (INT32)Rows) This->Mode->CursorRow = 0;
+    } else if (*String == L'\b') {
+      if (This->Mode->CursorColumn > 0) This->Mode->CursorColumn--;
+    } else if (*String >= 0x20) {
+      if (++This->Mode->CursorColumn >= (INT32)Columns) {
+        This->Mode->CursorColumn = 0;
+        if (++This->Mode->CursorRow >= (INT32)Rows) This->Mode->CursorRow = 0;
+      }
+    }
     if (*String == L'\n') {
       Buffer[Index++] = '\r';
       Buffer[Index++] = '\n';
     } else if (*String == L'\r') {
-      // The framebuffer console has no cursor movement; drop it.
+      Buffer[Index++] = '\r';
     } else if (*String == L'\b') {
       Buffer[Index++] = '\b';
     } else if (*String < 0x80) {
@@ -158,9 +174,7 @@ SerialTextQueryMode (
     return EFI_INVALID_PARAMETER;
   }
 
-  *Columns = 80;
-  *Rows    = 25;
-  return EFI_SUCCESS;
+  return FbConTextGeometry (Columns, Rows);
 }
 
 STATIC
@@ -171,7 +185,10 @@ SerialTextSetMode (
   IN UINTN                            ModeNumber
   )
 {
-  return (ModeNumber == 0) ? EFI_SUCCESS : EFI_UNSUPPORTED;
+  if (ModeNumber != 0) return EFI_UNSUPPORTED;
+  This->Mode->Mode = 0;
+  This->Mode->CursorColumn = This->Mode->CursorRow = 0;
+  return FbConTextClear ();
 }
 
 STATIC
@@ -193,12 +210,10 @@ SerialTextClearScreen (
   )
 {
   //
-  // SerialPortInitialize() on FrameBufferSerialPortLib resets the console:
-  // it repaints the framebuffer background and moves the cursor to the top.
-  // That is exactly ClearScreen semantics for this console.
+  // Explicit clear: SerialPortInitialize is idempotent after the first call.
   //
-  SerialPortInitialize ();
-  return EFI_SUCCESS;
+  This->Mode->CursorColumn = This->Mode->CursorRow = 0;
+  return FbConTextClear ();
 }
 
 STATIC
@@ -210,7 +225,12 @@ SerialTextSetCursorPosition (
   IN UINTN                            Row
   )
 {
-  return EFI_SUCCESS;
+  EFI_STATUS Status = FbConTextCursor (Column, Row);
+  if (!EFI_ERROR (Status)) {
+    This->Mode->CursorColumn = (INT32)Column;
+    This->Mode->CursorRow = (INT32)Row;
+  }
+  return Status;
 }
 
 STATIC

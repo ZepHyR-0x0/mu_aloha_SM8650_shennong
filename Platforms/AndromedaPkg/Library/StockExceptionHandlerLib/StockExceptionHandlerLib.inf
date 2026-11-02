@@ -1,0 +1,19 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = StockExceptionHandlerLib
+  FILE_GUID = 5D2B3D82-B3E6-49B1-94A8-58D17C71C8A5
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = NULL
+
+[Sources.AARCH64]
+  StockExceptionHandler.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  ArmPkg/ArmPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  PrintLib
+  SerialPortLib

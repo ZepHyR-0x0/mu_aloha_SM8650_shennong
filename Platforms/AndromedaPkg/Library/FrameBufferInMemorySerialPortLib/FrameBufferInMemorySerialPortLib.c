@@ -10,6 +10,7 @@
 #include <Library/ArmLib.h>
 #include <Library/BaseLib.h>
 #include <Library/CacheMaintenanceLib.h>
+#include <Library/TimerLib.h>
 #include <Library/HobLib.h>
 #include <Library/MemoryMapHelperLib.h>
 #include <Library/SerialPortLib.h>
@@ -27,6 +28,17 @@ FBCON_POSITION* p_Position = NULL;
 FBCON_POSITION m_MaxPosition;
 FBCON_COLOR    m_Color;
 BOOLEAN        m_Initialized = FALSE;
+BOOLEAN        mVerbose = FALSE;
+
+// Uptime timestamp emitted at the start of each log line. The counter is the
+// same one TimerLib uses, so a "real" wall clock is not available this early;
+// the millisecond offset from the free-running counter start is what makes
+// boot stalls measurable across different DXE modules. The stamp is always
+// recorded in the memory ring and is shown on screen only when verbose is on.
+STATIC BOOLEAN  mTscReady = FALSE;
+STATIC BOOLEAN  mLineStart = TRUE;
+STATIC UINT64   mBootTscBase = 0;
+STATIC UINT64   mTscFreq = 0;
 
 UINTN gWidth = FixedPcdGet32(PcdMipiFrameBufferWidth);
 // Reserve half screen for output
@@ -88,6 +100,68 @@ SerialPortInitialize(VOID)
   return Status;
 }
 
+STATIC
+FBCON_SCREEN_STATE *
+FbScreenState (
+  VOID
+  )
+{
+  UINTN FrameBytes = gWidth * gHeight * (gBpp / 8);
+  if ((p_Position == NULL) ||
+      (DisplayMemoryRegion.Length < FrameBytes + sizeof (*p_Position) + sizeof (FBCON_SCREEN_STATE))) {
+    return NULL;
+  }
+  return (FBCON_SCREEN_STATE *)(p_Position + 1);
+}
+
+VOID
+FbConSetVerbose (
+  IN BOOLEAN Verbose
+  )
+{
+  FBCON_SCREEN_STATE *Screen;
+  if (EFI_ERROR (SerialPortInitialize ())) {
+    return;
+  }
+  mVerbose = Verbose;
+
+  // Each DXE module has a separate library instance. Share the screen choice
+  // in display memory without writing log bytes, counters or archive metadata.
+  Screen = FbScreenState ();
+  if (Screen != NULL) {
+    Screen->Verbose = Verbose;
+    Screen->Magic   = FBCON_SCREEN_STATE_MAGIC;
+    WriteBackInvalidateDataCacheRange (Screen, sizeof (*Screen));
+  }
+}
+
+STATIC
+VOID
+FbSyncVerbose (
+  VOID
+  )
+{
+  FBCON_SCREEN_STATE *Screen = FbScreenState ();
+  mVerbose = FALSE;
+  if (Screen != NULL) {
+    InvalidateDataCacheRange (Screen, sizeof (*Screen));
+    if (Screen->Magic == FBCON_SCREEN_STATE_MAGIC) {
+      mVerbose = (Screen->Verbose != 0);
+    }
+  }
+}
+
+BOOLEAN
+FbConGetVerbose (
+  VOID
+  )
+{
+  if (!EFI_ERROR (SerialPortInitialize ())) {
+    FbSyncVerbose ();
+  }
+  return mVerbose;
+}
+
 void ResetFb(void)
 {
   // Clear current screen.
@@ -109,8 +183,8 @@ void ResetFb(void)
 }
 
 // Rounded-corner safe margins (pixels). Xiaomi 14 corner radius ~90px.
-#define FBCON_MARGIN_X 64
-#define FBCON_MARGIN_Y 96
+#define FBCON_MARGIN_X 96
+#define FBCON_MARGIN_Y 160
 
 void FbConReset(void)
 {
@@ -123,9 +197,36 @@ void FbConReset(void)
   m_Color.Background = FB_BGRA8888_BLACK;
 }
 
+EFI_STATUS FbConTextGeometry (UINTN *Columns, UINTN *Rows)
+{
+  EFI_STATUS Status = SerialPortInitialize ();
+  if (EFI_ERROR (Status)) return Status;
+  if (Columns == NULL || Rows == NULL) return EFI_INVALID_PARAMETER;
+  *Columns = m_MaxPosition.x / SCALE_FACTOR;
+  *Rows = m_MaxPosition.y / SCALE_FACTOR;
+  return *Columns != 0 && *Rows != 0 ? EFI_SUCCESS : EFI_UNSUPPORTED;
+}
+EFI_STATUS FbConTextCursor (UINTN Column, UINTN Row)
+{
+  UINTN Columns, Rows;
+  EFI_STATUS Status = FbConTextGeometry (&Columns, &Rows);
+  if (EFI_ERROR (Status)) return Status;
+  if (Column >= Columns || Row >= Rows) return EFI_UNSUPPORTED;
+  p_Position->x = (INTN)Column; p_Position->y = (INTN)(Row * SCALE_FACTOR);
+  return EFI_SUCCESS;
+}
+EFI_STATUS FbConTextClear (VOID)
+{
+  EFI_STATUS Status = SerialPortInitialize ();
+  if (EFI_ERROR (Status)) return Status;
+  ResetFb (); p_Position->x = p_Position->y = 0; FbConFlush ();
+  return EFI_SUCCESS;
+}
+
 void FbConPutCharWithFactor(char c, int type, unsigned scale_factor)
 {
   char *Pixels;
+  BOOLEAN intstate = ArmGetInterruptState();
 
 paint:
 
@@ -140,17 +241,17 @@ paint:
       p_Position->x = 0;
       return;
     }
+    else if (c == '\b') {
+      if (p_Position->x > 0) p_Position->x--;
+      return;
+    }
     else {
       return;
     }
   }
 
-  // Save some space
-  if (p_Position->x == 0 && (unsigned char)c == ' ' &&
-      type != FBCON_SUBTITLE_MSG && type != FBCON_TITLE_MSG)
-    return;
+  // Preserve leading spaces so shell cursor positioning matches QueryMode.
 
-  BOOLEAN intstate = ArmGetInterruptState();
   if (intstate)
     ArmDisableInterrupts();
 
@@ -176,6 +277,18 @@ newline:
   p_Position->y += scale_factor;
   p_Position->x = 0;
   if (p_Position->y >= m_MaxPosition.y - scale_factor) {
+    //
+    // This console does not scroll: when the page is full it wipes the screen and starts
+    // again at the top. The panel is the only channel this board has for a boot that dies
+    // early, and the evidence is read back by filming it, so hold the completed page for
+    // a second before it disappears. Only at this clear - the one SerialPortInitialize()
+    // does at startup has nothing on screen to preserve.
+    //
+    // DISABLED (b301) again: the hold blocks the caller for a full second on
+    // every screen flip, which perturbs USB timing and shifts the reset point.
+    // Comment it back in only when a page has to be photographed for OCR.
+    // MicroSecondDelay (1000000);
+
     ResetFb();
     FbConFlush();
     p_Position->y = 0;
@@ -348,8 +461,10 @@ static void mem_putchar(UINT8 c)
   // this boot" (or foreign data); take ownership and start from the beginning.
   //
   if ((hdr->Magic != BOOT_LOG_RING_MAGIC) || (hdr->Offset >= size)) {
+    UINT32 VerboseBit = hdr->Reserved & 1U;
+
     hdr->Magic    = BOOT_LOG_RING_MAGIC;
-    hdr->Reserved = 0;
+    hdr->Reserved = VerboseBit;   // preserve verbose set by an earlier producer
     hdr->Written  = 0;
     hdr->Offset   = 0;
   }
@@ -367,26 +482,113 @@ static void mem_putchar(UINT8 c)
   WriteBackInvalidateDataCacheRange(hdr, sizeof(*hdr));
 }
 
+static const UINT8 FbDigits[10] = { '0','1','2','3','4','5','6','7','8','9' };
+
+STATIC
+UINTN
+FbU64ToAscii (
+  IN  UINT64  Value,
+  OUT CHAR8   *Out,
+  IN  UINTN   Width
+  )
+{
+  CHAR8   Tmp[20];
+  UINTN   Count;
+  UINTN   Index;
+
+  Count = 0;
+  do {
+    Tmp[Count++] = (CHAR8)FbDigits[Value % 10];
+    Value /= 10;
+  } while ((Value != 0) && (Count < sizeof (Tmp)));
+
+  while (Count < Width) {
+    Tmp[Count++] = '0';
+  }
+
+  for (Index = 0; Index < Count; Index++) {
+    Out[Index] = Tmp[Count - 1 - Index];
+  }
+
+  return Count;
+}
+
+STATIC
+VOID
+FbEmitTimestamp (
+  IN BOOLEAN  Screen
+  )
+{
+  UINT64  Now;
+  UINT64  Delta;
+  UINT64  Ms;
+  UINT64  Remainder;
+  CHAR8   Stamp[24];
+  UINTN   Len;
+  UINTN   Index;
+
+  if (!mTscReady) {
+    mTscFreq   = GetPerformanceCounterProperties (&mBootTscBase, NULL);
+    mTscReady  = TRUE;
+  }
+
+  if (mTscFreq == 0) {
+    return;
+  }
+
+  Now   = GetPerformanceCounter ();
+  Delta = (Now >= mBootTscBase) ? (Now - mBootTscBase) : 0;
+  Ms    = DivU64x64Remainder (Delta * 1000ULL, mTscFreq, &Remainder);
+
+  Len      = 0;
+  Stamp[Len++] = '[';
+  Len += FbU64ToAscii (Ms / 1000, Stamp + Len, 6);
+  Stamp[Len++] = '.';
+  Len += FbU64ToAscii (Ms % 1000, Stamp + Len, 3);
+  Stamp[Len++] = ']';
+  Stamp[Len++] = ' ';
+
+  for (Index = 0; Index < Len; Index++) {
+    mem_putchar ((UINT8)Stamp[Index]);
+    if (Screen) {
+      FbConPutCharWithFactor (Stamp[Index], FBCON_COMMON_MSG, SCALE_FACTOR);
+    }
+  }
+}
+
 UINTN
 EFIAPI
 SerialPortWrite(IN UINT8 *Buffer, IN UINTN NumberOfBytes)
 {
-  UINT8 *CONST Final          = &Buffer[NumberOfBytes];
-  UINTN        InterruptState = ArmGetInterruptState();
+  UINTN  InterruptState = ArmGetInterruptState ();
+  UINTN  Index;
 
-  if (InterruptState)
-    ArmDisableInterrupts();
-
-  for (UINTN i = 0; i < NumberOfBytes; i++) {
-    mem_putchar(Buffer[i]);
+  if (InterruptState) {
+    ArmDisableInterrupts ();
   }
 
-  while (Buffer < Final) {
-    FbConPutCharWithFactor(*Buffer++, FBCON_COMMON_MSG, SCALE_FACTOR);
+  FbSyncVerbose ();
+
+  for (Index = 0; Index < NumberOfBytes; Index++) {
+    if (mLineStart) {
+      FbEmitTimestamp (mVerbose);
+      mLineStart = FALSE;
+    }
+
+    mem_putchar (Buffer[Index]);
+    if (mVerbose) {
+      FbConPutCharWithFactor ((char)Buffer[Index], FBCON_COMMON_MSG, SCALE_FACTOR);
+    }
+
+    if (Buffer[Index] == '\n') {
+      mLineStart = TRUE;
+    }
   }
 
-  if (InterruptState)
-    ArmEnableInterrupts();
+  if (InterruptState) {
+    ArmEnableInterrupts ();
+  }
+
   return NumberOfBytes;
 }
 
@@ -394,27 +596,40 @@ UINTN
 EFIAPI
 SerialPortWriteCritical(IN UINT8 *Buffer, IN UINTN NumberOfBytes)
 {
-  UINT8 *CONST Final             = &Buffer[NumberOfBytes];
-  UINTN        CurrentForeground = m_Color.Foreground;
-  UINTN        InterruptState    = ArmGetInterruptState();
+  UINTN  CurrentForeground = m_Color.Foreground;
+  UINTN  InterruptState    = ArmGetInterruptState ();
+  UINTN  Index;
 
-  if (InterruptState)
-    ArmDisableInterrupts();
-
-  for (UINTN i = 0; i < NumberOfBytes; i++) {
-    mem_putchar(Buffer[i]);
+  if (InterruptState) {
+    ArmDisableInterrupts ();
   }
 
   m_Color.Foreground = FB_BGRA8888_YELLOW;
 
-  while (Buffer < Final) {
-    FbConPutCharWithFactor(*Buffer++, FBCON_COMMON_MSG, SCALE_FACTOR);
+  FbSyncVerbose ();
+
+  for (Index = 0; Index < NumberOfBytes; Index++) {
+    if (mLineStart) {
+      FbEmitTimestamp (mVerbose);
+      mLineStart = FALSE;
+    }
+
+    mem_putchar (Buffer[Index]);
+    if (mVerbose) {
+      FbConPutCharWithFactor ((char)Buffer[Index], FBCON_COMMON_MSG, SCALE_FACTOR);
+    }
+
+    if (Buffer[Index] == '\n') {
+      mLineStart = TRUE;
+    }
   }
 
   m_Color.Foreground = CurrentForeground;
 
-  if (InterruptState)
-    ArmEnableInterrupts();
+  if (InterruptState) {
+    ArmEnableInterrupts ();
+  }
+
   return NumberOfBytes;
 }
 

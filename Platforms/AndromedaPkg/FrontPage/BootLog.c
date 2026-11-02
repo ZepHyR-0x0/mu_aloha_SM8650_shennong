@@ -19,8 +19,40 @@
 #include <Library/BootLogRing.h>
 #include <Library/CacheMaintenanceLib.h>
 #include <Library/MemoryMapHelperLib.h>
+#include <Library/MemoryAllocationLib.h>
+#include <Library/UefiBootServicesTableLib.h>
+#include "../Driver/ReadOnlyStorageDxe/ReadOnlyStorage.h"
 
 #include "BootLog.h"
+
+STATIC EFI_GUID mLogPolicyGuid = READ_ONLY_STORAGE_GUID;
+STATIC EFI_STATUS LogPolicy (READ_ONLY_STORAGE_POLICY **Policy)
+{
+  EFI_STATUS Status = gBS->LocateProtocol (&mLogPolicyGuid, NULL, (VOID **)Policy);
+  if (EFI_ERROR (Status)) return Status;
+  return *Policy != NULL && (*Policy)->Revision >= 2 && (*Policy)->SaveLog != NULL &&
+    (*Policy)->ReadLog != NULL ? EFI_SUCCESS : EFI_UNSUPPORTED;
+}
+EFI_STATUS BootLogSave (CONST CHAR8 *Phase)
+{
+  READ_ONLY_STORAGE_POLICY *Policy;
+  CHAR8 *Buffer;
+  UINTN Length;
+  EFI_STATUS Status = LogPolicy (&Policy);
+  if (EFI_ERROR (Status)) return Status;
+  Buffer = AllocatePool (BOOT_LOG_MAX_BYTES);
+  if (Buffer == NULL) return EFI_OUT_OF_RESOURCES;
+  Status = BootLogRead (Buffer, BOOT_LOG_MAX_BYTES, &Length);
+  if (!EFI_ERROR (Status)) Status = Length == 0 ? EFI_NOT_FOUND : Policy->SaveLog (Buffer, Length, Phase);
+  FreePool (Buffer);
+  return Status;
+}
+EFI_STATUS BootLogReadStored (CHAR8 *Buffer, UINTN *Length, BOOLEAN Previous)
+{
+  READ_ONLY_STORAGE_POLICY *Policy;
+  EFI_STATUS Status = LogPolicy (&Policy);
+  return EFI_ERROR (Status) ? Status : Policy->ReadLog (Buffer, Length, Previous);
+}
 
 STATIC
 EFI_STATUS

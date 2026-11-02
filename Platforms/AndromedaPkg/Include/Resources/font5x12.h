@@ -32,7 +32,7 @@
 #define FONT_WIDTH 5
 #define FONT_HEIGHT 12
 
-#define SCALE_FACTOR 3  // 1440x3200 panel: 6x12px glyphs were unreadable at 1
+#define SCALE_FACTOR 4  // 1440x3200 panel: 24x48 text cells for shell readability.
 
 unsigned font5x12[] = {
     0x00000000, 0x00000000, 0x08421080, 0x00020084, 0x00052940, 0x00000000,

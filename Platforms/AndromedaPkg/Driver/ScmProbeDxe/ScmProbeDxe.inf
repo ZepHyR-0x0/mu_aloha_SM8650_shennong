@@ -1,0 +1,43 @@
+## @file
+#  One boot, several answers about SCM, smcinvoke, ShmBridge and config.
+#
+#  Runs once, after ScmDxeCompat and before TzDxeLA. Everything it prints is
+#  something the next few bring-up decisions depend on, so a single flash cycle
+#  answers all of them instead of one question per build.
+#
+#  Prints through SerialPortWrite rather than DEBUG, like every other probe in
+#  this port, because DEBUG output has proved unreliable here.
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = ScmProbeDxe
+  FILE_GUID                      = 3d8c2a71-5f4e-4b19-8a6d-2c7e9b0f1a55
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = ScmProbeDxeInitialize
+
+[Sources.common]
+  ScmProbeDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DxeServicesTableLib
+  ConfigurationMapHelperLib
+  PrintLib
+  SerialPortLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEfiBlockIoProtocolGuid
+  gEfiPartitionInfoProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+
+[Depex]
+  TRUE

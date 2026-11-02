@@ -20,6 +20,7 @@
 /* Used to read chip serial number */
 #include <Protocol/EFIChipInfo.h>
 #include <Protocol/EFIPlatformInfo.h>
+#include <Library/PlatformInfoCompat.h>
 
 /* Used to hash device serial number */
 #include <Protocol/Hash.h>
@@ -124,8 +125,7 @@ RetrievePlatformName(CHAR8 *PlatformName)
     return EFI_INVALID_PARAMETER;
   }
 
-  Status = pEfiPlatformInfoProtocol->GetPlatformInfo(
-      pEfiPlatformInfoProtocol, &PlatformInfo);
+  Status = PlatformInfoGetSafe(pEfiPlatformInfoProtocol, &PlatformInfo, NULL);
 
   if (!EFI_ERROR(Status)) {
     EFI_PLATFORMINFO_PLATFORM_TYPE platformInfoType = PlatformInfo.platform;

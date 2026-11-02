@@ -240,7 +240,7 @@ UiCallback (
 {
   EFI_STATUS  Status = EFI_SUCCESS;
 
-  DEBUG ((DEBUG_INFO, "FrontPage:UiCallback() - Question ID=0x%08x Type=0x%04x Action=0x%04x ShortValue=0x%02x\n", QuestionId, Type, Action, *(UINT8 *)Value));
+  DEBUG ((DEBUG_INFO, "FrontPage:UiCallback() - Question ID=0x%08x Type=0x%04x Action=0x%04x ShortValue=0x%02x\n", QuestionId, Type, Action, Value != NULL ? *(UINT8 *)Value : 0));
 
   //
   // Sanitize input values.
@@ -282,7 +282,48 @@ UiCallback (
       Status = HandleSecureBootChange (Value, ActionRequest);
       break;
     case FRONT_PAGE_ACTION_EXIT_FRONTPAGE:
+      mResetRequired = TRUE;
       *ActionRequest = EFI_BROWSER_ACTION_REQUEST_EXIT;
+      break;
+
+    case FRONT_PAGE_ACTION_REBOOT_FASTBOOT:
+    case FRONT_PAGE_ACTION_REBOOT_RECOVERY:
+      Status = FpPrepareReboot ((EFI_QUESTION_ID)mCallbackKey);
+      if (!EFI_ERROR (Status)) *ActionRequest = EFI_BROWSER_ACTION_REQUEST_EXIT;
+      else {
+        SWM_MB_RESULT Result;
+        SwmDialogsMessageBox (L"Restart", L"The stock reset service is unavailable. See QR Log.",
+          L"", SWM_MB_OK, 0, &Result);
+      }
+      break;
+
+    case FRONT_PAGE_ACTION_USB_MODE:
+      if (Type != EFI_IFR_TYPE_NUM_SIZE_8) return EFI_INVALID_PARAMETER;
+      Status = FpQueueUsbUiMode (Value->u8);
+      if (!EFI_ERROR (Status)) *ActionRequest = EFI_BROWSER_ACTION_REQUEST_EXIT;
+      break;
+
+    case FRONT_PAGE_ACTION_USB_STORAGE:
+    case FRONT_PAGE_ACTION_USB_CDC:
+    case FRONT_PAGE_ACTION_USB_RAM:
+    case FRONT_PAGE_ACTION_USB_DISABLE:
+      Status = FpQueueUsbMode (QuestionId);
+      if (!EFI_ERROR (Status)) *ActionRequest = EFI_BROWSER_ACTION_REQUEST_EXIT;
+      break;
+
+    case FRONT_PAGE_ACTION_USB_RAM_DELETE:
+      Status = FpQueueRamDelete ();
+      if (!EFI_ERROR (Status)) *ActionRequest = EFI_BROWSER_ACTION_REQUEST_EXIT;
+      break;
+
+    case FRONT_PAGE_ACTION_RAM_SIZE:
+      if (Type!=EFI_IFR_TYPE_STRING) return EFI_INVALID_PARAMETER;
+      {
+        CHAR16 *Text=HiiGetString(mFrontPagePrivate.HiiHandle,Value->string,NULL);
+        if (Text==NULL) return EFI_NOT_FOUND;
+        Status=FpQueueRamSize(Text);
+        FreePool(Text);
+      }
       break;
 
     case FRONT_PAGE_ACTION_REBOOT_TO_FRONTPAGE:

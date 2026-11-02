@@ -1,7 +1,7 @@
 From f3dddbd0e46e85ceb0b751b041eca3362ba2194b Mon Sep 17 00:00:00 2001
 From: porter <port@local>
 Date: Wed, 21 Oct 2026 22:50:33 +0800
-Subject: [PATCH 01/10] PORT-TRACE: print FFS GUID of each driver before
+Subject: [PATCH 01/11] PORT-TRACE: print FFS GUID of each driver before
  CoreLoadImage
 
 MDEPKG_NDEBUG (defined by package DSCs for RELEASE) compiles DEBUG() out, so the
@@ -58,3 +58,6 @@ index 023af6c..d905a41 100644
          Status = CoreLoadImage (
                     FALSE,
                     gDxeCoreImageHandle,
+-- 
+2.43.0
+

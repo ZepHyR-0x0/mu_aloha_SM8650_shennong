@@ -1,0 +1,28 @@
+From 3b48afa80f304e4f4c2fed6bf14fb43dceb91c30 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Sat, 31 Oct 2026 15:36:03 +0800
+Subject: [PATCH 9/9] shennong: dock full-width phone OSK at bottom
+
+---
+ MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboard.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboard.h b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboard.h
+index 8c0f5fb..7f8611c 100644
+--- a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboard.h
++++ b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboard.h
+@@ -18,9 +18,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #define KEYBOARD_INPUT_QUEUE_SIZE  20                   // Maximum depth of keyboard input queue.
+ 
+ #define DEFAULT_OSK_ICON_LOCATION  TopLeft              // Default keyboard icon screen position.
+-#define DEFAULT_OSK_LOCATION       TopLeft              // Default keyboard screen position.
++#define DEFAULT_OSK_LOCATION       BottomCenter         // Dock at the phone's bottom edge.
+ #define DEFAULT_OSK_ANGLE          Angle_0              // Default keyboard rotation angle.
+-#define DEFAULT_OSK_SIZE           0.70f                // Default keyboard size (percent of screen width).
++#define DEFAULT_OSK_SIZE           1.00f                // Full width; drawing and hit areas use the same transform.
+ 
+ #define PERIODIC_CHKINPUT_INTERVAL   (  5 * 10 * 1000)  // Check for pointer events: 5ms in 100ns units
+ #define PERIODIC_REFRESH_INTERVAL    (  5 * 10 * 1000)  // Check for paint events: 5ms in 100ns units
+-- 
+2.43.0
+

@@ -163,6 +163,27 @@ InstallShmBridge (
   EFI_HANDLE  Handle;
   VOID        *Check;
 
+  //
+  // Stand down if a real ShmBridge is already published.
+  //
+  // The stub exists only because RpmbListener asserts on LocateProtocol of this
+  // GUID, and the real driver used to fail its three SMCs and never install. Once
+  // TrustZone answers, the real one installs and its Allocate registers memory
+  // with TZ - which is what smcinvoke requires. A stub-installed buffer is not
+  // registered, and TZ rejects the invoke with -6 (0xFFFFFFFA).
+  //
+  // Both publish the same GUID, so whoever gets there first is what every later
+  // LocateProtocol returns. That is why this check has to happen here rather than
+  // relying on ordering alone.
+  //
+  Check  = NULL;
+  Status = gBS->LocateProtocol ((EFI_GUID *)&mShmBridgeProtocolGuid, NULL, &Check);
+  if (!EFI_ERROR (Status) && (Check != NULL)) {
+    UfsLog ("[SHMSTUB] real ShmBridge already present at 0x%lx, skipping\r\n",
+            (UINT64)(UINTN)Check);
+    return;
+  }
+
   UfsLog ("[SHMSTUB] installing...\r\n");
 
   Handle = NULL;

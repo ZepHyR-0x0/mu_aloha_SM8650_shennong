@@ -1,0 +1,441 @@
+From 0780e8d79b9ce8ba78fff6925f38fd6da65035a2 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Sat, 31 Oct 2026 14:40:14 +0800
+Subject: [PATCH 8/9] b317: gate navigation on double tap and type OSK keys on
+ release
+
+---
+ MsGraphicsPkg/Include/UIToolKit/Canvas.h      |   3 +
+ .../Include/UIToolKit/TouchGesture.h          |  65 +++++++++
+ .../Library/SimpleUIToolKit/Button.c          |   1 +
+ .../Library/SimpleUIToolKit/Canvas.c          |  91 ++++++++++++-
+ .../SimpleUIToolKit/SimpleUIToolKit.inf       |   1 +
+ .../OnScreenKeyboardDriver.c                  | 127 ++++++++++++++++++
+ .../OnScreenKeyboardDxe.inf                   |   1 +
+ 7 files changed, 288 insertions(+), 1 deletion(-)
+ create mode 100644 MsGraphicsPkg/Include/UIToolKit/TouchGesture.h
+
+diff --git a/MsGraphicsPkg/Include/UIToolKit/Canvas.h b/MsGraphicsPkg/Include/UIToolKit/Canvas.h
+index 5b67f9e..959f297 100644
+--- a/MsGraphicsPkg/Include/UIToolKit/Canvas.h
++++ b/MsGraphicsPkg/Include/UIToolKit/Canvas.h
+@@ -24,10 +24,13 @@ typedef struct _CANVAS_CHILD_CONTROL_ {
+ //////////////////////////////////////////////////////////////////////////////
+ // Canvas Class Definition
+ //
++#include <UIToolKit/TouchGesture.h>
++
+ typedef struct _Canvas {
+   // *** Base Class ***
+   //
+   ControlBase                      Base;
++  UIT_TOUCH_GESTURE                 m_TouchGesture;
+ 
+   // *** Member variables ***
+   //
+diff --git a/MsGraphicsPkg/Include/UIToolKit/TouchGesture.h b/MsGraphicsPkg/Include/UIToolKit/TouchGesture.h
+new file mode 100644
+index 0000000..51fb843
+--- /dev/null
++++ b/MsGraphicsPkg/Include/UIToolKit/TouchGesture.h
+@@ -0,0 +1,65 @@
++/** @file Tap recognition shared by navigation controls. No clock or UI dependencies. */
++#ifndef UIT_TOUCH_GESTURE_H
++#define UIT_TOUCH_GESTURE_H
++
++typedef struct {
++  BOOLEAN Down;
++  BOOLEAN Cancelled;
++  BOOLEAN Armed;
++  UINTN Target;
++  UINTN LastTarget;
++  UINT64 DownMs;
++  UINT64 LastMs;
++  UINT64 X;
++  UINT64 Y;
++  UINT64 LastX;
++  UINT64 LastY;
++} UIT_TOUCH_GESTURE;
++
++typedef enum { UitTapNone, UitTapFocus, UitTapConfirm } UIT_TAP_RESULT;
++
++STATIC inline UINT64
++UitTouchDistance (UINT64 A, UINT64 B)
++{
++  return A > B ? A - B : B - A;
++}
++
++STATIC inline UIT_TAP_RESULT
++UitTouchTap (UIT_TOUCH_GESTURE *G, BOOLEAN Down, UINTN Target,
++             UINT64 X, UINT64 Y, UINT64 Ms, UINT64 Slop)
++{
++  if (Down) {
++    if (!G->Down) {
++      G->Down = TRUE;
++      G->Cancelled = (BOOLEAN)(Target == 0);
++      G->Target = Target;
++      G->X = X;
++      G->Y = Y;
++      G->DownMs = Ms;
++    } else if (Target != G->Target || UitTouchDistance (X, G->X) > Slop ||
++               UitTouchDistance (Y, G->Y) > Slop) {
++      G->Cancelled = TRUE;
++    }
++    return UitTapNone;
++  }
++  if (!G->Down) return UitTapNone;
++  G->Down = FALSE;
++  if (G->Cancelled || Target == 0 || Target != G->Target ||
++      UitTouchDistance (X, G->X) > Slop || UitTouchDistance (Y, G->Y) > Slop ||
++      Ms - G->DownMs > 600) {
++    G->Armed = FALSE;
++    return UitTapNone;
++  }
++  if (G->Armed && Target == G->LastTarget && Ms - G->LastMs <= 500 &&
++      UitTouchDistance (X, G->LastX) <= Slop && UitTouchDistance (Y, G->LastY) <= Slop) {
++    G->Armed = FALSE;
++    return UitTapConfirm;
++  }
++  G->Armed = TRUE;
++  G->LastTarget = Target;
++  G->LastMs = Ms;
++  G->LastX = X;
++  G->LastY = Y;
++  return UitTapFocus;
++}
++#endif
+diff --git a/MsGraphicsPkg/Library/SimpleUIToolKit/Button.c b/MsGraphicsPkg/Library/SimpleUIToolKit/Button.c
+index 45c0e91..0ccb996 100644
+--- a/MsGraphicsPkg/Library/SimpleUIToolKit/Button.c
++++ b/MsGraphicsPkg/Library/SimpleUIToolKit/Button.c
+@@ -321,6 +321,7 @@ Draw (
+       this->m_ButtonDown = TRUE;
+     } else {
+       if (this->m_ButtonDown == TRUE) {
++        this->m_ButtonDown = FALSE;
+         this->m_pButton->State = SELECT;
+         Context                = this->m_pSelectionContext;
+       }
+diff --git a/MsGraphicsPkg/Library/SimpleUIToolKit/Canvas.c b/MsGraphicsPkg/Library/SimpleUIToolKit/Canvas.c
+index 1ec0d63..073e593 100644
+--- a/MsGraphicsPkg/Library/SimpleUIToolKit/Canvas.c
++++ b/MsGraphicsPkg/Library/SimpleUIToolKit/Canvas.c
+@@ -8,6 +8,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ **/
+ 
+ #include "SimpleUIToolKitInternal.h"
++#include <Library/TimerLib.h>
+ 
+ //////////////////////////////////////////////////////////////////////////////
+ // Private
+@@ -665,7 +666,7 @@ CopySettings (
+ 
+ static
+ OBJECT_STATE
+-Draw (
++NativeDraw (
+   IN    Canvas           *this,
+   IN    BOOLEAN          DrawHighlight,                 // Ignored by canvas class since the canvas itself doesn't get highlighted (but it's part of our base class).
+   IN    SWM_INPUT_STATE  *pInputState,
+@@ -811,6 +812,94 @@ Exit:
+ //////////////////////////////////////////////////////////////////////////////
+ //
+ //
++
++// Navigation actions require two complete taps on the same item. Edit boxes
++// still focus on one tap; the OSK handles text entry independently.
++static OBJECT_STATE
++Draw (Canvas *this, BOOLEAN DrawHighlight, SWM_INPUT_STATE *Input, VOID **Context)
++{
++#ifdef SHENNONG_TOUCH_GESTURES
++  UIT_CANVAS_CHILD_CONTROL *Child;
++  ControlBase *Control = NULL;
++  UINTN Target = 0;
++  UINT32 Cell = 0;
++  UINTN Index;
++  SWM_INPUT_STATE Press;
++  UIT_TAP_RESULT Tap;
++  UINT64 X, Y;
++  BOOLEAN Down;
++  BOOLEAN WasActionDown;
++  if (Context != NULL) *Context = NULL;
++  if (Input != NULL && Input->InputType == SWM_INPUT_TYPE_KEY) {
++    ZeroMem (&this->m_TouchGesture, sizeof (this->m_TouchGesture));
++  }
++  if (Input == NULL || Input->InputType != SWM_INPUT_TYPE_TOUCH)
++    return NativeDraw (this, DrawHighlight, Input, Context);
++  X = Input->State.TouchState.CurrentX;
++  Y = Input->State.TouchState.CurrentY;
++  Down = SWM_IS_FINGER_DOWN (Input->State.TouchState);
++  WasActionDown = (BOOLEAN)(this->m_TouchGesture.Down && this->m_TouchGesture.Target != 0);
++  for (Child = this->m_pControls; Child != NULL; Child = Child->pNext) {
++    SWM_RECT *B = &Child->ChildBounds;
++    ControlBase *C = (ControlBase *)Child->pControl;
++    if (Child->Invisible || C->GetControlState (C) == GRAYED ||
++        X < B->Left || X > B->Right || Y < B->Top || Y > B->Bottom) continue;
++    if (C->ControlType == BUTTON || C->ControlType == TOGGLESWITCH) {
++      Control = C;
++      Target = (UINTN)C;
++      break;
++    }
++    if (C->ControlType == LISTBOX) {
++      ListBox *L = (ListBox *)C;
++      for (Index = 0; Index < L->m_NumberOfCells; Index++) {
++        B = &L->m_pCells[Index].CellBounds;
++        if (X >= B->Left && X <= B->Right && Y >= B->Top && Y <= B->Bottom) {
++          Control = C;
++          Cell = (UINT32)Index;
++          Target = (UINTN)&L->m_pCells[Index];
++          break;
++        }
++      }
++      if (Control != NULL) break;
++    }
++  }
++  Tap = UitTouchTap (&this->m_TouchGesture, Down, Target, X, Y,
++                    GetTimeInNanoSecond (GetPerformanceCounter ()) / 1000000,
++                    MsUiScaleByTheme (24));
++  if (Control == NULL) {
++    // A release from a cancelled action gesture must never activate a new control.
++    if (WasActionDown && !Down) return NORMAL;
++    return NativeDraw (this, DrawHighlight, Input, Context);
++  }
++  if ((Down && !this->m_TouchGesture.Cancelled) || Tap == UitTapFocus) {
++    if (Control->ControlType == LISTBOX) {
++      ListBox *L = (ListBox *)Control;
++      L->m_SelectedCell = Cell;
++      L->m_HighlightedCell = Cell;
++      L->m_State = NORMAL;
++    }
++    this->SetHighlight (this, Control);
++  }
++  if (Tap != UitTapConfirm) return NORMAL;
++  // Forward one paired press/release only after confirmation. This preserves
++  // the existing control-specific callback ABI without firing on the first tap.
++  Press = *Input;
++  Press.State.TouchState.ActiveButtons |= 1;
++  NativeDraw (this, DrawHighlight, &Press, NULL);
++  {
++    OBJECT_STATE State = NativeDraw (this, DrawHighlight, Input, Context);
++    if (State == SELECT && Control->ControlType == LISTBOX) {
++      ListBox *L = (ListBox *)Control;
++      if ((L->m_Flags & UIT_LISTBOX_FLAGS_ORDERED_LIST) && L->m_LastAction == LB_ACTION_NONE)
++        L->m_LastAction = LB_ACTION_BOOT;
++    }
++    return State;
++  }
++#else
++  return NativeDraw (this, DrawHighlight, Input, Context);
++#endif
++}
++
+ static
+ VOID
+ Ctor (
+diff --git a/MsGraphicsPkg/Library/SimpleUIToolKit/SimpleUIToolKit.inf b/MsGraphicsPkg/Library/SimpleUIToolKit/SimpleUIToolKit.inf
+index 18e1a61..7d78c98 100644
+--- a/MsGraphicsPkg/Library/SimpleUIToolKit/SimpleUIToolKit.inf
++++ b/MsGraphicsPkg/Library/SimpleUIToolKit/SimpleUIToolKit.inf
+@@ -41,6 +41,7 @@
+ 
+ [LibraryClasses]
+   DebugLib
++  TimerLib
+   BaseMemoryLib
+   MathLib
+   MsUiThemeLib
+diff --git a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c
+index 7ceb26d..db5049b 100644
+--- a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c
++++ b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDriver.c
+@@ -24,6 +24,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/UefiBootServicesTableLib.h>
+ #include <Library/UefiLib.h>
+ #include <Library/MsColorTableLib.h>
++#include <Library/TimerLib.h>
+ 
+ #include <Protocol/DevicePath.h>
+ #include <Library/DevicePathLib.h>
+@@ -94,6 +95,9 @@ EFI_EVENT                      mCheckDisplayModeTimerEvent;
+ EFI_ABSOLUTE_POINTER_PROTOCOL  *mOSKPointerProtocol;
+ EFI_EVENT                      mOSKPaintEvent;
+ KEYBOARD_CONTEXT               mOSK;
++#ifdef SHENNONG_TOUCH_GESTURES
++STATIC VOID PhoneResetTouch (VOID);
++#endif
+ 
+ // Local function prototypes
+ //
+@@ -1924,6 +1928,10 @@ ShowKeyboard (
+ {
+   EFI_STATUS  Status = EFI_SUCCESS;
+ 
++#ifdef SHENNONG_TOUCH_GESTURES
++  if (!bShowKeyboard) PhoneResetTouch ();
++#endif
++
+   // Disable the key repeat timer
+   //
+   gBS->SetTimer (
+@@ -2628,6 +2636,112 @@ KeyModifierStateMachine (
+   return (bModifierKey);
+ }
+ 
++
++#ifdef SHENNONG_TOUCH_GESTURES
++STATIC BOOLEAN mPhoneDown;
++STATIC BOOLEAN mPhoneRepeat;
++STATIC BOOLEAN mPhoneIgnoreUp;
++STATIC UINTN mPhoneSpecial;
++STATIC UINT64 mPhoneShiftMs;
++
++STATIC VOID
++PhoneResetTouch (VOID)
++{
++  mPhoneDown = mPhoneRepeat = mPhoneIgnoreUp = FALSE;
++  mPhoneSpecial = 0;
++  mOSK.SelectedKey = NUMBER_OF_KEYS;
++}
++
++STATIC VOID
++PhoneCommitKey (UINTN Key)
++{
++  CHAR16 Unicode;
++  UINT16 Scan;
++  EFI_KEY EfiKey;
++  if (Key >= NUMBER_OF_KEYS) return;
++  Unicode = mOSK.pKeyMap[Key].Unicode;
++  Scan = mOSK.pKeyMap[Key].ScanCode;
++  EfiKey = mOSK.pKeyMap[Key].EfiKey;
++  if (EfiKey == EfiKeyLShift || EfiKey == EfiKeyRShift) {
++    UINT64 Now = GetTimeInNanoSecond (GetPerformanceCounter ()) / 1000000;
++    if (mOSK.KeyModifierState == Shift && Now - mPhoneShiftMs <= 500) mOSK.KeyModifierState = CapsLock;
++    else if (mOSK.KeyModifierState == Normal) mOSK.KeyModifierState = Shift;
++    else mOSK.KeyModifierState = Normal;
++    mPhoneShiftMs = Now;
++    mOSK.pKeyMap = mOSK.KeyModifierState == Normal ? mOSK_StdMode_US_EN : mOSK_ShiftMode_US_EN;
++    mOSK.bKeyboardStateChanged = TRUE;
++    return;
++  }
++  if (mOSK.pKeyMap[Key].Unicode == CHAR_BACKSPACE) {
++    InsertKeyPressIntoQueue (mOSK.pKeyMap[Key].ScanCode, CHAR_BACKSPACE);
++    return;
++  }
++  if (!KeyModifierStateMachine (EfiKey)) {
++    InsertKeyPressIntoQueue (Scan, Unicode);
++    if (mOSK.KeyModifierState == Normal) mOSK.pKeyMap = mOSK_StdMode_US_EN;
++  }
++  mOSK.bKeyboardStateChanged = TRUE;
++}
++
++STATIC VOID
++PhoneKeyboardInput (MS_SWM_ABSOLUTE_POINTER_STATE *S)
++{
++  BOOLEAN Down = SWM_IS_FINGER_DOWN (*S);
++  UINTN Key = NUMBER_OF_KEYS;
++  UINTN Special = 0;
++  EFI_STATUS Hit;
++  if (mPhoneIgnoreUp) {
++    if (!Down) mPhoneIgnoreUp = FALSE;
++    return;
++  }
++  Hit = CheckForKeyHit ((UINTN)S->CurrentX, (UINTN)S->CurrentY, &Key);
++  if (EFI_ERROR (Hit)) {
++    Key = NUMBER_OF_KEYS;
++    if (!EFI_ERROR (CheckForCloseButtonHit ((UINTN)S->CurrentX, (UINTN)S->CurrentY))) Special = 1;
++    else if (!EFI_ERROR (CheckForDockingButtonHit ((UINTN)S->CurrentX, (UINTN)S->CurrentY))) Special = 2;
++    else if (mOSK.DockedState == Undocked &&
++             !EFI_ERROR (CheckForKeyboardFrameHit ((UINTN)S->CurrentX, (UINTN)S->CurrentY))) Special = 3;
++  }
++  if (Down && !mPhoneDown) {
++    mPhoneSpecial = Special == 0 && Key == NUMBER_OF_KEYS ? 4 : Special;
++    mPhoneDown = TRUE;
++    mPhoneRepeat = FALSE;
++    mOSK.KeyboardDragOrigX = (UINTN)S->CurrentX;
++    mOSK.KeyboardDragOrigY = (UINTN)S->CurrentY;
++  }
++  if (!mPhoneDown) return;
++  if (mPhoneSpecial == 3 && Down) {
++    TranslateKeyboardLocation ((float)((INTN)S->CurrentX - (INTN)mOSK.KeyboardDragOrigX),
++                               (float)((INTN)S->CurrentY - (INTN)mOSK.KeyboardDragOrigY));
++    mOSK.KeyboardDragOrigX = (UINTN)S->CurrentX;
++    mOSK.KeyboardDragOrigY = (UINTN)S->CurrentY;
++    return;
++  }
++  if (!Down) {
++    gBS->SetTimer (mKeyRepeatTimerEvent, TimerCancel, 0);
++    if (mPhoneSpecial == 0 && Key < NUMBER_OF_KEYS && !mPhoneRepeat) PhoneCommitKey (Key);
++    else if (mPhoneSpecial == 1 && Special == 1) { ShowKeyboard (FALSE); ShowKeyboardIcon (TRUE); }
++    else if (mPhoneSpecial == 2 && Special == 2) SetKeyboardDockState (mOSK.DockedState == Docked ? Undocked : Docked);
++    else if (mPhoneSpecial == 3) Apply3DTransform (FALSE);
++    mPhoneDown = FALSE;
++    mPhoneSpecial = 0;
++    mPhoneRepeat = FALSE;
++    Key = NUMBER_OF_KEYS;
++  } else if (Key != mOSK.SelectedKey) {
++    // Sliding changes the preview only; leaving the keyboard cancels repeat.
++    gBS->SetTimer (mKeyRepeatTimerEvent, TimerCancel, 0);
++    mPhoneRepeat = FALSE;
++    if (mPhoneSpecial == 0 && Key < NUMBER_OF_KEYS && mOSK.pKeyMap[Key].Unicode == CHAR_BACKSPACE &&
++        PcdGetBool (PcdEnableTypematicOSK)) {
++      gBS->SetTimer (mKeyRepeatTimerEvent, TimerRelative, INITIAL_KEYREPEAT_INTERVAL);
++    }
++  }
++  mOSK.DeselectKey = mOSK.SelectedKey;
++  mOSK.SelectedKey = mPhoneSpecial == 0 ? Key : NUMBER_OF_KEYS;
++  if (mOSK.bDisplayKeyboard) RenderKeyboard (TRUE);
++}
++#endif
++
+ VOID
+ KeyboardInputHandler (
+   IN MS_SWM_ABSOLUTE_POINTER_STATE  *pTouchState
+@@ -2635,6 +2749,11 @@ KeyboardInputHandler (
+ {
+   EFI_STATUS  Status = EFI_SUCCESS;
+ 
++#ifdef SHENNONG_TOUCH_GESTURES
++  PhoneKeyboardInput (pTouchState);
++  return;
++#endif
++
+   // Capture the touch state
+   //
+   BOOLEAN  bFingerDown    = ((pTouchState->ActiveButtons & 0x1) == 1);
+@@ -2974,6 +3093,11 @@ OSKKeyRepeatCallback (
+     return;
+   }
+ 
++#ifdef SHENNONG_TOUCH_GESTURES
++  if (!mPhoneDown || mPhoneSpecial != 0 || mOSK.pKeyMap[KeyCount].Unicode != CHAR_BACKSPACE) return;
++  mPhoneRepeat = TRUE;
++#endif
++
+   // Re-insert the last key pressed
+   //
+   InsertKeyPressIntoQueue (mOSK.pKeyMap[KeyCount].ScanCode, mOSK.pKeyMap[KeyCount].Unicode);
+@@ -3062,6 +3186,9 @@ OSKProcessPointerCallback (
+   //
+   ShowKeyboardIcon (FALSE);
+   ShowKeyboard (TRUE);
++#ifdef SHENNONG_TOUCH_GESTURES
++  mPhoneIgnoreUp = TRUE; // The icon-opening contact must never enter a key.
++#endif
+ 
+   return FALSE;
+ }
+diff --git a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf
+index d96c3b0..3a2ee39 100644
+--- a/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf
++++ b/MsGraphicsPkg/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf
+@@ -32,6 +32,7 @@
+   MsCorePkg/MsCorePkg.dec
+ 
+ [LibraryClasses]
++  TimerLib
+   UefiDriverEntryPoint
+   DebugLib
+   BaseLib
+-- 
+2.43.0
+

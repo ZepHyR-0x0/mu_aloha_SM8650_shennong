@@ -27,16 +27,14 @@
 #include <Library/RealTimeClockLib.h>
 #include <Library/TimerLib.h>
 
-STATIC EFI_TIME BaseTime;
+#include "VirtualTime.h"
 
 /**
 Returns the current time and date information, and the time-keeping capabilities
 of the virtual RTC.
 
-For simplicity, this LibGetTime does not report Years/Months, instead it will
-only report current Day, Hours, Minutes and Seconds starting from the begining
-of CPU up-time. Otherwise, a more complex logic will be required to account for
-leap years and days/month differences.
+Returns a synthetic calendar beginning at 2019-01-01 plus CPU uptime.
+This read-only clock does not claim to know the actual date or time.
 
 @param  Time                  A pointer to storage to receive a snapshot of the
 current time.
@@ -53,62 +51,18 @@ EFI_STATUS
 EFIAPI
 LibGetTime(OUT EFI_TIME *Time, OUT EFI_TIME_CAPABILITIES *Capabilities)
 {
-  UINT32 Freq = ArmGenericTimerGetTimerFreq();
-
-  if (Time == NULL) {
-    return EFI_INVALID_PARAMETER;
-  }
-
-  //
-  // Depend on ARM generic timer to report date/time relative to the
-  // start of CPU timer counting where date and time will always
-  // be relative to the date/time 1/1/1900 00H:00M:00S
-  //
-
-  ASSERT(Freq != 0);
-  if (Freq == 0) {
+  UINTN Freq = ArmGenericTimerGetTimerFreq();
+  if (Time == NULL) return EFI_INVALID_PARAMETER;
+  if (Freq == 0) return EFI_DEVICE_ERROR;
+  // Preserve a valid synthetic calendar across midnight, month/year and leap
+  // boundaries. The source is uptime, not a PMIC RTC or Android wall clock.
+  if (!VirtualRtcFromSeconds (GetPerformanceCounter() / Freq, Time))
     return EFI_DEVICE_ERROR;
-  }
-
-  if (Capabilities) {
-    Capabilities->Accuracy   = 0;
-    Capabilities->Resolution = Freq;
+  if (Capabilities != NULL) {
+    Capabilities->Accuracy = 0;
+    Capabilities->Resolution = 1;
     Capabilities->SetsToZero = FALSE;
   }
-
-  UINT64 ElapsedSeconds = GetPerformanceCounter() / Freq;
-
-  //
-  // Don't report Year/Month since Leap Year logic is not implemented. This
-  // should be fine since the sole purpose of this special implementation is to
-  // be used for relative time measurement. e.g. Windows Boot Manager.
-  //
-
-  Time->Year  = BaseTime.Year;
-  Time->Month = BaseTime.Month;
-
-  const UINT64 SECONDS_PER_DAY = 24 * 60 * 60;
-  Time->Day                    = (ElapsedSeconds / SECONDS_PER_DAY);
-  ElapsedSeconds %= SECONDS_PER_DAY;
-
-  const UINT64 SECONDS_PER_HOUR = 60 * 60;
-  Time->Hour                    = (ElapsedSeconds / SECONDS_PER_HOUR);
-  ElapsedSeconds %= SECONDS_PER_HOUR;
-
-  const UINT64 SECONDS_PER_MINUTE = 60;
-  Time->Minute                    = (ElapsedSeconds / SECONDS_PER_MINUTE);
-  ElapsedSeconds %= SECONDS_PER_MINUTE;
-
-  Time->Second = ElapsedSeconds;
-
-  //
-  // Not required to report in our special case
-  //
-
-  Time->Nanosecond = 0;
-  Time->TimeZone   = 0;
-  Time->Daylight   = 0;
-
   return EFI_SUCCESS;
 }
 
@@ -192,8 +146,6 @@ EFI_STATUS
 EFIAPI
 LibRtcInitialize(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 {
-  BaseTime.Year  = 2019;
-  BaseTime.Month = 1;
 
   return EFI_SUCCESS;
 }

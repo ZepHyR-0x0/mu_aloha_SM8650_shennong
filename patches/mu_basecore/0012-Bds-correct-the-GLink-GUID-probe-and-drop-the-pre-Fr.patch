@@ -1,0 +1,78 @@
+From 3b1f738410268c629758e991f86d05d8eb9922a0 Mon Sep 17 00:00:00 2001
+From: HR_Z <2463882771@qq.com>
+Date: Mon, 2 Nov 2026 10:37:45 +0800
+Subject: [PATCH] Bds: correct the GLink GUID probe and drop the pre-FrontPage
+ hold
+
+The Qmi GUID in BdsPortCheckUsbDeps used 0x0e44/0x4f8b for its middle fields,
+which is a different GUID from the one GLinkDxe actually depexes on:
+
+  02 d7 8a 85 52 | 16 8b | 37 41 | 9c 64 df e0 4d 94 2e 80 | 08
+
+so a MISSING verdict from that probe said nothing about GLinkDxe. Use the
+values read out of the depex.
+
+BdsPortHoldScreen() kept the console up for six seconds before FrontPage
+started, purely so the probes could be photographed. They are readable now,
+so the hold only delays every boot; remove it.
+---
+ MdeModulePkg/Universal/BdsDxe/BdsEntry.c | 29 ++++++++----------------
+ 1 file changed, 9 insertions(+), 20 deletions(-)
+
+diff --git a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+index bbdb406..496ed4b 100644
+--- a/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
++++ b/MdeModulePkg/Universal/BdsDxe/BdsEntry.c
+@@ -183,7 +183,15 @@ BdsPortCheckUsbDeps (
+   // is the best remaining explanation for Start() hanging.
+   //
+   {
+-    EFI_GUID  Qmi = { 0x52858ad7, 0x0e44, 0x4f8b, { 0x9c, 0x0a, 0x2a, 0x1b, 0x7d, 0x53, 0x2e, 0x91 } };
++    //
++    // The GUID has to be the one GLinkDxe actually depexes on, read out of its .depex:
++    //
++    //   02 d7 8a 85 52 | 16 8b | 37 41 | 9c 64 df e0 4d 94 2e 80 | 08
++    //
++    // An earlier revision of this probe used 0x0e44/0x4f8b for the middle fields, which
++    // is a different GUID, so its MISSING verdict said nothing about GLinkDxe.
++    //
++    EFI_GUID  Qmi = { 0x52858AD7, 0x8B16, 0x4137, { 0x9C, 0x64, 0xDF, 0xE0, 0x4D, 0x94, 0x2E, 0x80 } };
+ 
+     Instance = NULL;
+     if (EFI_ERROR (gBS->LocateProtocol (&Qmi, NULL, &Instance))) {
+@@ -237,24 +245,6 @@ BdsPortCheckUsbCfgDeps (
+   }
+ }
+ 
+-//
+-// Hold the console for a few seconds before BDS launches FrontPage.
+-//
+-// FrontPage paints the whole framebuffer, so everything printed during DXE and
+-// BDS is covered the instant it starts. Without this hold the probes are
+-// unreadable, which is the whole reason the last few rounds produced no
+-// information.
+-//
+-STATIC
+-VOID
+-BdsPortHoldScreen (
+-  IN UINTN  Seconds
+-  )
+-{
+-  BdsPortTrace ("holding console", NULL, 0, EFI_SUCCESS);
+-  gBS->Stall (Seconds * 1000000);
+-}
+-
+ STATIC
+ VOID
+ BdsPortCheckSwmDeps (
+@@ -1357,7 +1347,6 @@ BdsEntry (
+   // FrontPage paints the whole framebuffer, so everything printed above is
+   // covered the instant it starts. Hold long enough to actually read it.
+   //
+-  BdsPortHoldScreen (6);
+ 
+   BootFwUi         = (BOOLEAN)((OsIndication & EFI_OS_INDICATIONS_BOOT_TO_FW_UI) != 0);
+   PlatformRecovery = (BOOLEAN)((OsIndication & EFI_OS_INDICATIONS_START_PLATFORM_RECOVERY) != 0);
+-- 
+2.55.0.windows.3
+

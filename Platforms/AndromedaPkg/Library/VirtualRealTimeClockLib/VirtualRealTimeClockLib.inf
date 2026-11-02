@@ -25,6 +25,7 @@
 
 [Sources.common]
   VirtualRealTimeClockLib.c
+  VirtualTime.h
 
 [Packages]
   ArmPkg/ArmPkg.dec

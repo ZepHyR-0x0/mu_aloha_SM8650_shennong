@@ -1,7 +1,7 @@
 From d4b6667dd1c34f4b95320afa21e4aa68a2890bbd Mon Sep 17 00:00:00 2001
 From: HR_Z <2463882771@qq.com>
 Date: Fri, 23 Oct 2026 10:54:15 +0800
-Subject: [PATCH 03/10] PORT: boot the firmware UI first, plus boot-menu
+Subject: [PATCH 03/11] PORT: boot the firmware UI first, plus boot-menu
  breadcrumbs
 
 The [BDS] probes showed the machine was resolving the boot manager menu fine
@@ -133,3 +133,6 @@ index 598b02e..32583f1 100644
    }
  
    if (!PlatformRecovery) {
+-- 
+2.43.0
+

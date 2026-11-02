@@ -131,7 +131,7 @@
   gEfiMdePkgTokenSpaceGuid.PcdDefaultTerminalType|4
 
   # Boot Manager
-  gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|2
+  gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|0
 
   # PCI Express
   gEfiMdeModulePkgTokenSpaceGuid.PcdSrIovSupport|FALSE
@@ -218,7 +218,25 @@
   #
   FileExplorerLib|MdeModulePkg/Library/FileExplorerLib/FileExplorerLib.inf
 
-  # Allow dynamic PCDs
+  # PCD library
+  #
+  # DxePcdLib declares [Depex.common.DXE_DRIVER] gEfiPcdProtocolGuid and EDK2 merges
+  # a library's DEPEX into every module that links it, so this line used to park 55
+  # of the 241 files in the FV behind a protocol nothing published. ArmCpuDxe,
+  # ArmGicDxe, ArmTimerDxe, BdsDxe, DisplayEngine, HiiDatabase, AcpiTableDxe and
+  # DevicePathDxe were among them - none had ever dispatched.
+  #
+  # BasePcdLibNull was tried as a fix. It removed the dependency, but it stores
+  # nothing: every LibPcdSet* is a no-op and every LibPcdGet* asserts and returns 0.
+  # That is harmless for FixedAtBuild PCDs, which the build resolves to literals
+  # without calling the library at all. It is not harmless for DynamicEx ones, and
+  # the GUI died on exactly that - FrontPage writes a pointer into
+  # PcdCurrentPointerState and DisplayEngine reads it back to find the shared buffer
+  # between them. With the null library the write vanished, the read returned 0, and
+  # FormDisplay.c:2087 asserted.
+  #
+  # PcdShimDxe now publishes a real PCD protocol backed by an in-memory table, so
+  # DxePcdLib works and the dependency is satisfied rather than avoided.
   #
   PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
 
@@ -513,6 +531,13 @@
   ArmPkg/Drivers/CpuDxe/CpuDxe.inf {
     <LibraryClasses>
     NULL|MsCorePkg/Library/MemoryProtectionExceptionHandlerLib/MemoryProtectionExceptionHandlerLib.inf
+!ifdef SHENNONG_USB_FAULT_TRACE
+!if $(SHENNONG_USB_FAULT_TRACE) == 1
+    # The memory-protection library owns DefaultExceptionHandler. Call a unique
+    # bounded dump from that implementation rather than competing for its name.
+    NULL|AndromedaPkg/Library/StockExceptionHandlerLib/StockExceptionHandlerLib.inf
+!endif
+!endif
   }
 
   ArmPkg/Drivers/TimerDxe/TimerDxe.inf

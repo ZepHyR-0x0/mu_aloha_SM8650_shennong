@@ -26,10 +26,13 @@
 
 #string STR_MF_MENU_OP_HWH        #language en-US    "Hardware Health"
 
-#string STR_MF_MENU_OP_EXIT       #language en-US    "Exit"
-#string STR_MF_MENU_OP_LOG        #language en-US    "LOG"
-#string STR_MF_MENU_OP_LOGAUTO    #language en-US    "LOGAUTO"
-#string STR_MF_MENU_OP_DIAG      #language en-US    "DIAG"
+#string STR_MF_MENU_OP_EXIT       #language en-US    "Reboot"
+#string STR_MF_MENU_OP_LOGAUTO    #language en-US    "QR Log"
+#string STR_MF_MENU_OP_REFRESH_LOG #language en-US "Refresh Log"
+#string STR_MF_MENU_OP_DIAG      #language en-US    "USB Function"
+#string STR_MF_MENU_OP_LOGREAD   #language en-US    "QR Log(last)"
+#string STR_MF_MENU_OP_RETURN_BOOT #language en-US  "Return to Boot Menu"
+#string STR_MF_MENU_OP_POWER_STATUS #language en-US "Power / Status"
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Generic Strings
@@ -68,9 +71,11 @@
 //
 #string STR_FP_EXIT_HEADER          #language en-US  "\fh!48!Exit settings and restart your platform"
 
-#string STR_FP_EXIT_DESCRIPTION     #language en-US  "\fh!28!All changes to the settings on this PC have been saved. Restart your PC to exit settings."
+#string STR_FP_EXIT_DESCRIPTION     #language en-US  "\fh!28!Choose a restart destination."
 
 #string STR_FP_RESTART_NOW_BUTTON   #language en-US  "Restart now"
+#string STR_FP_RESTART_FASTBOOT_BUTTON #language en-US "Restart to bootloader (fastboot)"
+#string STR_FP_RESTART_RECOVERY_BUTTON #language en-US "Restart to recovery"
 
 /////////////////////////////////////////////////////////////////////////////
 // Form ID ?: Security
@@ -132,6 +137,8 @@
 
 #string STR_PWD_ERRORMSG_INVALID_CHAR     #language en-US  "The provided password contains an invalid character."
 
+#string STR_MF_MENU_OP_FILES #language en-US "FILES (READ ONLY)"
+
 #string STR_PWD_ERRORMSG_AUTHERROR        #language en-US  "The password is incorrect. Try again."
 
 #string STR_PWD_ERRORMSG_SET_GENFAILURE   #language en-US  "Failed to set a password."
@@ -164,3 +171,28 @@
 #string STR_SB_VIOLATION_WARNING      #language en-US  "One or more of the selected boot devices had a SecureBoot violation! Returning to UEFI settings. Please verify SecureBoot key configuration and boot device selection."
 
 #string STR_SEC_SB_WHAT_IS_TEXT       #language en-US  "Secure Boot is configured by selecting a Secure Boot certificate keyset. There are three keysets to choose from on this PC.\r\rMicrosoft only: Only boot software signed by Microsoft will execute on the PC.\r\rMicrosoft & 3rd-party CA: Boot software which is signed by Microsoft or the Microsoft Corporation UEFI CA 2011 will execute on the PC. Choose this option for compatibility with 3rd-party UEFI software and drivers.\r\rNone: No keyset is installed and Secure Boot is disabled on the PC. Any boot software will execute on the PC. This configuration is not recommended and should only be used by advanced users."
+
+#string STR_INF_VIEW_FIRMWARE_UNAVAILABLE #language en-US "No firmware inventory available"
+
+#string STR_USB_CURRENT_MODE #language en-US "Current mode: unavailable"
+#string STR_USB_HEADER        #language en-US "USB modes"
+#string STR_USB_HELP          #language en-US "Select a mode, then confirm. Switching disconnects USB."
+#string STR_USB_NATIVE        #language en-US "Enable USB link"
+#string STR_USB_STORAGE       #language en-US "Mount logfs (read only)"
+#string STR_USB_STORAGE_HELP  #language en-US "Exports a fixed copy. Refresh after saving new logs."
+#string STR_USB_CDC           #language en-US "CDC serial: log / Shell"
+#string STR_USB_CDC_HELP      #language en-US "Open the COM port at 115200. LOG gets logs; enter UEFI Shell for a terminal."
+#string STR_USB_RAM #language en-US "RAM disk: enable / connect USB"
+#string STR_USB_RAM_HELP #language en-US "PC can write RAM. Eject and disable USB for Shell access. Release or reboot deletes files."
+#string STR_USB_RAM_SIZE #language en-US "RAM disk size (MB)"
+#string STR_USB_RAM_SIZE_HELP #language en-US "64-2048 MB, default 512. Release the old disk before changing size."
+#string STR_USB_RAM_OFF #language en-US "RAM disk: off (delete files)"
+#string STR_USB_DISABLE       #language en-US "Disable USB"
+#string STR_USB_REFRESH       #language en-US "Refresh logfs export"
+#string STR_USB_MODE_PROMPT   #language en-US "USB mode"
+#string STR_USB_MODE_HELP     #language en-US "Only one USB function is active at a time. Switching disconnects and reconnects the link."
+#string STR_USB_OFF           #language en-US "Disabled"
+#string STR_USB_LOGFS         #language en-US "logfs (read-only storage)"
+#string STR_USB_RAMDISK       #language en-US "RAM disk (auto-create)"
+#string STR_USB_RAM_DELETE    #language en-US "Delete RAM disk"
+#string STR_USB_RAM_DELETE_HELP #language en-US "If the RAM disk is active, USB is switched off first, then the disk is released."

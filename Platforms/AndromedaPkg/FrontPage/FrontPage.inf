@@ -29,7 +29,18 @@
   QrCode.c
   BootLog.c
   BootMenu.c
+  ShellDisplay.c
+  ShellDisplay.h
+  FrontPageEventService.h
+  RemoteControl.c
+  RemoteControl.h
   Diag.c
+  Health.c
+  PowerStatus.c
+  PowerStatusData.c
+  FileBrowser.c
+  Reboot.c
+  ../Library/WcdUsbLib/WcdUsbLib.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -89,6 +100,11 @@
   gMuVarPolicyDxePhaseGuid                      ## CONSUMES
 
 [Protocols]
+  gEfiSimpleTextOutProtocolGuid
+  gEfiHiiFontProtocolGuid
+  gEfiBlockIoProtocolGuid
+  gEfiPartitionInfoProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
   gEfiUsbDeviceProtocolGuid                     ## CONSUMES
   gEfiSmbiosProtocolGuid                        ## PROTOCOL CONSUMES
   gEfiGraphicsOutputProtocolGuid                ## PROTOCOL SOMETIMES_CONSUMES

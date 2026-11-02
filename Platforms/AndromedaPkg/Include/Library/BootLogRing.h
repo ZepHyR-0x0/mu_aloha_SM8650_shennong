@@ -29,8 +29,8 @@
 // ShennongPkg/Device/xiaomi-shennong/Library/PlatformMemoryMapLib. Both the
 // writer and the reader use it so they can never disagree on the address.
 //
-#define BOOT_LOG_RING_BASE   0x81CE4000UL
-#define BOOT_LOG_RING_SIZE   0x00010000UL
+#define BOOT_LOG_RING_BASE   0x81F00000UL
+#define BOOT_LOG_RING_SIZE   0x00040000UL
 
 #pragma pack(1)
 typedef struct {

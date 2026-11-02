@@ -1,7 +1,7 @@
 From 895b5ac21420c83c92d82d87d5121f5b0830114f Mon Sep 17 00:00:00 2001
 From: HR_Z <2463882771@qq.com>
 Date: Fri, 23 Oct 2026 11:08:40 +0800
-Subject: [PATCH 04/10] PORT: dump SimpleWindowManagerDxe's DEPEX protocol
+Subject: [PATCH 04/11] PORT: dump SimpleWindowManagerDxe's DEPEX protocol
  availability
 
 FrontPage reports '[FP] FAIL no SWM', so SimpleWindowManagerDxe never published
@@ -99,3 +99,6 @@ index 32583f1..fa969c1 100644
    //
    // PORT: ask for the firmware UI unconditionally.
    //
+-- 
+2.43.0
+

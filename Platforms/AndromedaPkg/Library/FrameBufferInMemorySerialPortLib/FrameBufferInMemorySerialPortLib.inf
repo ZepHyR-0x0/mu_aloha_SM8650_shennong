@@ -23,6 +23,7 @@
   CompilerIntrinsicsLib
   CacheMaintenanceLib
   MemoryMapHelperLib
+  TimerLib
 
 [Pcd]
   gAndromedaPkgTokenSpaceGuid.PcdMipiFrameBufferWidth

@@ -1,0 +1,33 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = ReadOnlyStorageDxe
+  FILE_GUID = 783adabc-310b-4275-ae3b-9a0c31771000
+  MODULE_TYPE = DXE_DRIVER
+  ENTRY_POINT = ReadOnlyStorageEntry
+[Sources]
+  ReadOnlyStorageDxe.c
+  LogfsDisk.c
+[Packages]
+  MdePkg/MdePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DevicePathLib
+  PrintLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  SerialPortLib
+[Protocols]
+  gEfiBlockIoProtocolGuid
+  gEfiBlockIo2ProtocolGuid
+  gEfiDiskIoProtocolGuid
+  gEfiDiskIo2ProtocolGuid
+  gEfiEraseBlockProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiPartitionInfoProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+[Guids]
+  gEfiFileInfoGuid
+[Depex]
+  TRUE

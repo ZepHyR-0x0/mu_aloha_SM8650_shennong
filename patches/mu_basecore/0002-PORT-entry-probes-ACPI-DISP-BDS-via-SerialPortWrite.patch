@@ -1,7 +1,7 @@
 From 49e3cd66c86224c01fb8562bab590bb83fc3dcb5 Mon Sep 17 00:00:00 2001
 From: porter <port@local>
 Date: Thu, 22 Oct 2026 09:45:30 +0800
-Subject: [PATCH 02/10] PORT: entry probes [ACPI]/[DISP]/[BDS] via
+Subject: [PATCH 02/11] PORT: entry probes [ACPI]/[DISP]/[BDS] via
  SerialPortWrite
 
 ---
@@ -117,3 +117,6 @@ index 79535cf..598b02e 100644
    HotkeyTriggered = NULL;
    Status          = EFI_SUCCESS;
    BootSuccess     = FALSE;
+-- 
+2.43.0
+

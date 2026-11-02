@@ -9,6 +9,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Uefi.h>
 
 #include <Protocol/DevicePath.h>
+#include <Protocol/UsbBringup.h>
 
 #include <Library/AcpiPlatformUpdateLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -18,6 +19,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/IoLib.h>
 #include <Library/MsPlatformDevicesLib.h>
 #include <Library/PcdLib.h>
+#include <Library/PrintLib.h>
+#include <Library/SerialPortLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 
@@ -79,6 +82,35 @@ PlatformIsDevicePathUsb(IN EFI_DEVICE_PATH_PROTOCOL *DevicePath)
 /* Dummy function needed for event notification callback */
 STATIC VOID DummyNotify(IN EFI_EVENT Event, IN VOID *Context) {}
 
+// Observe the existing ABL event boundary, without starting another controller
+// or calling vendor methods. Only read core registers after our owner exists.
+STATIC VOID UsbChainReport(IN CONST CHAR8 *Stage, IN EFI_STATUS EventStatus)
+{
+  EFI_GUID BringupGuid = USB_BRINGUP_PROTOCOL_GUID;
+  EFI_GUID ConfigGuid = {0xe722b03f, 0xb250, 0x42ce, {0x8e, 0xbd, 0x5b, 0xd5, 0x18, 0x12, 0xd0, 0x37}};
+  USB_BRINGUP_PROTOCOL *Bringup = NULL;
+  VOID *Config = NULL;
+  EFI_STATUS Status;
+  EFI_STATUS ConfigStatus;
+  CHAR8 Buffer[256];
+  UINTN Length;
+
+  Status = gBS->LocateProtocol(&BringupGuid, NULL, (VOID **)&Bringup);
+  ConfigStatus = gBS->LocateProtocol(&ConfigGuid, NULL, &Config);
+  if (!EFI_ERROR(Status) && Bringup != NULL && Bringup->Context != NULL) {
+    Length = AsciiSPrint(Buffer, sizeof(Buffer),
+        "[USBCHAIN b214] %a event=%r config=%r owner=%lx rev=%lx DCTL=%08x DSTS=%08x PHYCFG=%08x\r\n",
+        Stage, EventStatus, ConfigStatus, (UINT64)(UINTN)Bringup->Context, Bringup->Revision,
+        MmioRead32(0x0A60C704), MmioRead32(0x0A60C70C), MmioRead32(0x0A60C200));
+  }
+  else {
+    Length = AsciiSPrint(Buffer, sizeof(Buffer),
+        "[USBCHAIN b214] %a event=%r owner=%r; core registers skipped\r\n",
+        Stage, EventStatus, Status);
+  }
+  SerialPortWrite((UINT8 *)Buffer, Length);
+}
+
 /**
 Library function used to provide the list of platform devices that MUST be
 connected at the beginning of BDS
@@ -87,6 +119,8 @@ EFI_DEVICE_PATH_PROTOCOL **EFIAPI GetPlatformConnectList(VOID)
 {
   EFI_STATUS Status;
   EFI_EVENT  UsbConfigEvt;
+  EFI_GUID   BringupGuid = USB_BRINGUP_PROTOCOL_GUID;
+  USB_BRINGUP_PROTOCOL *Bringup = NULL;
   EFI_GUID   InitUsbControllerGuid = {
       0x1c0cffce,
       0xfc8d,
@@ -94,18 +128,33 @@ EFI_DEVICE_PATH_PROTOCOL **EFIAPI GetPlatformConnectList(VOID)
       {0x8c, 0x78, 0x9c, 0x9e, 0x5b, 0x53, 0xd, 0x36}};
 
   // Update the ACPI tables with SOC runtime information
+  UsbChainReport("before-acpi", EFI_SUCCESS);
   PlatformUpdateAcpiTables();
+  UsbChainReport("before-event", EFI_SUCCESS);
+
+  // b224 stock replay signals this event immediately before native StartEx,
+  // as ABL does. Do not also initialize it here before the GUI can collect logs.
+  Status = gBS->LocateProtocol(&BringupGuid, NULL, (VOID **)&Bringup);
+  if (!EFI_ERROR(Status) && Bringup != NULL && Bringup->Revision == 1 &&
+      Bringup->Context == NULL && Bringup->TestOnce != NULL) {
+    CONST CHAR8 Message[] = "[USBCHAIN b224] native init deferred to USB TEST\r\n";
+    SerialPortWrite((UINT8 *)Message, sizeof(Message) - 1);
+    return NULL;
+  }
 
   // Notify the USB controller to start now
   Status = gBS->CreateEventEx(
       EVT_NOTIFY_SIGNAL, TPL_CALLBACK, DummyNotify, NULL,
       &InitUsbControllerGuid, &UsbConfigEvt);
+  UsbChainReport("event-created", Status);
   if (EFI_ERROR(Status)) {
     DEBUG(
         (EFI_D_ERROR, "Usb controller init event not signaled: %r\n", Status));
   }
   else {
-    gBS->SignalEvent(UsbConfigEvt);
+    Status = gBS->SignalEvent(UsbConfigEvt);
+    // Signal success alone does not prove the vendor callback ran successfully.
+    UsbChainReport("event-signaled", Status);
     gBS->CloseEvent(UsbConfigEvt);
   }
 

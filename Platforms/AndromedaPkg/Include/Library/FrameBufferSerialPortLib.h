@@ -13,6 +13,14 @@ typedef struct _FBCON_POSITION {
   INTN y;
 } FBCON_POSITION, *PFBCON_POSITION;
 
+// Boot-local screen policy, immediately after the shared framebuffer cursor.
+// This state belongs to Display Reserved, never to the archived log ring.
+#define FBCON_SCREEN_STATE_MAGIC  0x56534246U  // 'FBSV'
+typedef struct {
+  UINT32 Magic;
+  UINT32 Verbose;
+} FBCON_SCREEN_STATE;
+
 typedef struct _FBCON_COLOR {
   UINTN Foreground;
   UINTN Background;
@@ -36,6 +44,12 @@ enum FbConMsgType {
 };
 
 void ResetFb(void);
+EFI_STATUS FbConTextGeometry (UINTN *Columns, UINTN *Rows);
+EFI_STATUS FbConTextCursor (UINTN Column, UINTN Row);
+EFI_STATUS FbConTextClear (VOID);
+
+VOID    FbConSetVerbose (BOOLEAN Verbose);
+BOOLEAN FbConGetVerbose (VOID);
 
 UINTN
 EFIAPI

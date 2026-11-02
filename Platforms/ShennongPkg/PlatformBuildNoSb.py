@@ -252,6 +252,10 @@ class PlatformBuilder(UefiBuilder, BuildSettingsManager):
         self.env.SetValue("ACTIVE_PLATFORM", PackageName+"/"+PlatformName+"NoSb.dsc", "Platform Hardcoded")
 ## aloha patch end
         self.env.SetValue("TARGET_ARCH", "AARCH64", "Platform Hardcoded")
+        stock_usb = os.environ.get("USB_STOCK_CHAIN", "0")
+        if stock_usb not in ("0", "1"):
+            raise ValueError("USB_STOCK_CHAIN must be 0 or 1")
+        self.env.SetValue("BLD_*_USB_STOCK_CHAIN", stock_usb, "USB stock replay selection")
         self.env.SetValue("TOOL_CHAIN_TAG", "CLANGPDB", "set default to clangpdb")
         self.env.SetValue("EMPTY_DRIVE", "FALSE", "Default to false")
         self.env.SetValue("RUN_TESTS", "FALSE", "Default to false")
