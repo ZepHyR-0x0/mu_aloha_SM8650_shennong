@@ -1,5 +1,7 @@
 # mu_aloha_SM8650_shennong
 
+**中文** | [**English**](README_EN.md)
+
 > **借鉴或使用本项目时，请在项目的显眼位置注明来源。**
 > 具体要求见 [项目使用](#项目使用)。
 
@@ -172,22 +174,13 @@ python tools/qr_camera_reader/qr_camera_reader.py --camera 0
 
 ## 致谢
 
-这个移植的每一层都建立在别人的工作之上，在此致谢。
+本项目的每一层都离不开开源社区的工作，在此致谢。
 
 **固件框架**
 - [Project Mu](https://github.com/microsoft/mu) 与 [TianoCore EDK II](https://github.com/tianocore/edk2) —— UEFI 框架与构建体系
 - [Project Mu Aloha](https://github.com/Project-Aloha/mu_aloha_platforms) —— 本项目直接派生自它的平台层
 - Microsoft `mu_basecore`、`mu_plus`、`mu_tiano_plus`、`mu_silicon_arm_tiano`、
   `mu_feature_config`、`mu_feature_dfci` —— 六个基础子模块
-- [SurfaceDuoBinaries-fork](https://github.com/Project-Aloha/SurfaceDuoBinaries-fork) —— 原厂 PE 容器
-- [acpi_oem_third_party_common](https://github.com/Project-Aloha/acpi_oem_third_party_common) 与
-  [CrDK](https://github.com/Project-Aloha/CrDK) —— ACPI 与 Crane 平台包
-- [OpenSSL](https://github.com/openssl/openssl) —— 固定到 `aea7aaf2`；master 已删掉
-  `asn1_err.c`，OpensslLib 会因此编译失败
-
-**设备数据与逆向参考**
-- 本机 Xiaomi 14 Pro 的原厂固件（`uefi_a`、`abl_a`、`xbl_a`、设备树）——
-  寄存器语义、原厂调用链、USB SID40 映射的唯一可信来源
 - [Xiaomi_Kernel_OpenSource-shennong](https://github.com/MiCode/Xiaomi_Kernel_OpenSource) ——
   eUSB2 repeater 与 DWC3 PHY 的内核实现
 - Xiaomi SM8650 devicetree 源码 —— 引脚、regulator、面板参数
@@ -199,4 +192,3 @@ python tools/qr_camera_reader/qr_camera_reader.py --camera 0
 - `devtree/`：Python 3.8+ 与 PyYAML，导出 SVG/PNG 时另需 Graphviz
 
 原厂二进制的版权属于 Qualcomm 与小米，本仓库只做提取与调用，不重新分发其源码。
-
