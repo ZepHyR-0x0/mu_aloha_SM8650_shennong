@@ -176,6 +176,7 @@ This repo is provided "as is" for research and development purposes only, withou
 Every layer of this project builds on the work of the open-source community.
 
 **Firmware Framework**
+- [mu_aloha_platforms_sm8650](https://github.com/xingguangcuican6666/mu_aloha_platforms_sm8650) — source repository of this project
 - [Project Mu](https://github.com/microsoft/mu) & [TianoCore EDK II](https://github.com/tianocore/edk2) — UEFI framework & build system
 - [Project Mu Aloha](https://github.com/Project-Aloha/mu_aloha_platforms) — this project derives directly from its platform layer
 - Microsoft `mu_basecore`, `mu_plus`, `mu_tiano_plus`, `mu_silicon_arm_tiano`,

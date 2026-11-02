@@ -177,6 +177,7 @@ python tools/qr_camera_reader/qr_camera_reader.py --camera 0
 本项目的每一层都离不开开源社区的工作，在此致谢。
 
 **固件框架**
+- [mu_aloha_platforms_sm8650](https://github.com/xingguangcuican6666/mu_aloha_platforms_sm8650) —— 本项目的源码仓库
 - [Project Mu](https://github.com/microsoft/mu) 与 [TianoCore EDK II](https://github.com/tianocore/edk2) —— UEFI 框架与构建体系
 - [Project Mu Aloha](https://github.com/Project-Aloha/mu_aloha_platforms) —— 本项目直接派生自它的平台层
 - Microsoft `mu_basecore`、`mu_plus`、`mu_tiano_plus`、`mu_silicon_arm_tiano`、
