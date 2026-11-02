@@ -5,7 +5,7 @@
 > **借鉴或使用本项目时，请在项目的显眼位置注明来源。**
 > 具体要求见 [项目使用](#项目使用)。
 
-**Xiaomi 14 Pro**（shennong / SM8650）的 Project Mu UEFI 移植：SM8650 overlay 源码、一键编译脚本、可启动镜像 及 测试套件。
+**Xiaomi 14 Pro**（shennong / SM8650）的 Project Mu UEFI 移植：SM8650 overlay 源码、一键编译脚本、可启动镜像 及 测试套件。项目旨在为 Xiaomi 14 pro（shennong） 机型的相关 Windows on arm 及其他系统的移植项目（如UniXNU）提供力所能及的帮助。
 
 - 快照：分支 `pre-touch`，HEAD `a00ac7d7`（b341，2026-11-02）
 - 镜像：`Build/ShennongPkg/xiaomi-shennong.img`，2,711,552 字节
@@ -24,6 +24,7 @@
 <td align="center">USB Function —— 四种模式可切换</td>
 </tr>
 </table>
+
 <img src="docs/screenshots/uefi-shell-osk.jpg" width="330" alt="UEFI Shell 与屏幕键盘">
 
 **UEFI Shell + 屏幕键盘** —— `alias` 输出的块设备列表，以及底部的软键盘。
