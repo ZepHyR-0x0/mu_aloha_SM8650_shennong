@@ -31,7 +31,13 @@
 
 ## 当前情况
 
+**日志** — 可用
+
+- 支持自动写入 logfs 持久化日志和QR/USB-大容量存储设备/USB-CDC三种传输方式；
+- 引导镜像时长按音量上键开启日志屏显。
+
 **屏幕显示** — 可用
+
 - 1440×3200 面板点亮，帧缓冲控制台可读（无 UART 时的唯一输出通道）
 - 图形界面（FrontPage）可进入：主菜单、文件浏览、电源状态、USB、退出页
 - 开机先显示 Boot Menu，5 秒无操作自动进 GUI；按键或触摸可取消倒计时
@@ -52,6 +58,7 @@
 - 只读：能浏览 FAT 分区、读文件；写/擦除一律拒绝
 
 **TZ / SMC** — 部分可用
+
 - 普通 SMC 调用有正常回应，ShmBridge 已建立
 - 安全服务没全通：feature TA 签名校验失败（`ret=12`），Keymaster 只到加载器
 
@@ -143,9 +150,7 @@ python tools/qr_camera_reader/qr_camera_reader.py --camera 0
 
 本仓库**不包含** Project Mu 公共基础树、其他机型、其他 git 分支和分析/提取目录，由 `build.sh` 自动准备。
 
-## 目标
 
-为 Xiaomi 14 Pro（shennong / SM8650）的 **UniXNU / Hackios** 开发提供可启动、可读 UFS、能通过二维码取日志、并且**状态可视化**的 Project Mu 基座。
 
 ## 安全约束（来自实际 bring-up）
 

@@ -65,7 +65,11 @@ apply_patches() {
   init_submodule "$dir" "$base" "$url"
   for p in "$OVERLAY/patches/$series"/*.patch; do
     echo "    $(basename "$p")"
-    git -C "$BASE/$dir" apply --whitespace=nowarn "$p"
+    # EDK2 子模块源码在仓库里是 CRLF（各自 .gitattributes 为 `* -text`），
+    # 而本仓库 .gitattributes 的 `*.patch text eol=lf` 会把补丁规范化成 LF，
+    # 直接用 git apply 会因行尾不匹配而全部失败。--ignore-whitespace 让上下文
+    # 匹配忽略 CR，补丁才能正常应用。
+    git -C "$BASE/$dir" apply --ignore-whitespace --whitespace=nowarn "$p"
   done
 }
 
