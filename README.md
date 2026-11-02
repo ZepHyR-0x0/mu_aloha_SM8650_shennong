@@ -194,6 +194,6 @@ python tools/qr_camera_reader/qr_camera_reader.py --camera 0
 - `devtree/`：Python 3.8+ 与 PyYAML，导出 SVG/PNG 时另需 Graphviz
 
 **智能体**
-deepseek v4.1 flash 和 GPT 6.1 sol 的协助指导与疑难排查。
+- deepseek v4.1 flash 和 GPT 6.1 sol 的协助指导与疑难排查。
 
 原厂二进制的版权属于 Qualcomm 与小米，本仓库只做提取与调用，不重新分发其源码。
