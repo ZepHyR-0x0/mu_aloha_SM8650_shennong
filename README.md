@@ -1,5 +1,8 @@
 # mu_aloha_SM8650_shennong
 
+> **借鉴或使用本项目时，请在项目的显眼位置注明来源。**
+> 具体要求见 [使用与致谢](#使用与致谢)。
+
 **Xiaomi 14 Pro**（shennong / SM8650）的 Project Mu UEFI 移植：SM8650 overlay 源码、一键编译脚本、可启动镜像、**交互式设备树可视化**和**二维码日志识别器**。
 
 - 快照：分支 `pre-touch`，HEAD `a00ac7d7`（b341，2026-11-02）
@@ -63,6 +66,12 @@
 
 截图取自实机（1440×3200，缩放到 720 宽，单张约 90–130 KB）。
 
+<img src="docs/screenshots/uefi-shell-osk.jpg" width="330" alt="UEFI Shell 与屏幕键盘">
+
+**UEFI Shell + 屏幕键盘** —— `alias` 输出的块设备列表，以及底部的软键盘。
+这是较早的一张照片，画面里还带着 `startup.nsh` 的 5 秒倒计时；该脚本后来已经移除，
+Shell 现在直接进入交互，不再自动执行诊断脚本。
+
 ## 一键编译
 
 Linux / WSL：
@@ -101,7 +110,11 @@ Build/ShennongPkg/xiaomi-shennong.img   # fastboot boot 用
 
 **[打开 devtree/examples/out/shennong.html](devtree/examples/out/shennong.html)**
 
-在本地克隆中双击即可打开；它包含 107 个节点、204 条硬依赖 + 27 条软依赖、17 层布局，可以搜索、按状态/分组过滤、点击节点查看证据链、看阻塞链和地址冲突。GitHub 网页点击 `.html` 只会显示源码，请下载或克隆后打开。
+<iframe src="devtree/examples/out/shennong.html" width="100%" height="640" style="border:1px solid #d0d7de;border-radius:8px"></iframe>
+
+> 部分 Markdown 预览器（包括 GitHub）出于安全策略不渲染 `iframe`。遇到这种情况请直接点上面的链接，或把仓库克隆到本地后用浏览器打开 `devtree/examples/out/shennong.html`。
+
+在本地克隆中双击即可打开；它包含 107 个节点、204 条硬依赖 + 27 条软依赖、17 层布局，可以搜索、按状态/分组过滤、点击节点查看证据链、看阻塞链和地址冲突。
 
 当前快照（`devtree/examples/shennong.state.yaml`，更新于 2026-11-02 / b341）：
 
@@ -164,6 +177,22 @@ python tools/qr_camera_reader/qr_camera_reader.py --camera 0
 - 不拆机、不接 UART，调试只通过 USB / 屏幕二维码。
 - 崩溃恢复：长按电源 10–15 秒。
 - 该镜像面向 **Xiaomi 14 Pro / shennong**；不要刷到其他机型。
+
+## 使用与致谢
+
+**如果你借鉴或使用本项目的代码、补丁、文档、截图或设备树可视化数据，请在你自己项目的显眼位置注明来源。**
+
+"显眼位置"指打开项目就能看到的地方，例如：
+
+- README 首屏或开头的说明段
+- 独立的致谢 / Credits 章节
+- 发布说明、项目主页或产品关于页
+
+推荐的表述：
+
+> 本项目的 SM8650 UEFI 移植部分基于 **mu_aloha_SM8650_shennong**（Xiaomi 14 Pro / shennong）的工作。
+
+只需注明来源，不要求开源你的修改；但**请不要删掉本仓库已有的出处说明**，也不要把本项目的工作表述为原创。商业使用与二次分发同样适用。
 
 ## 许可与免责
 
