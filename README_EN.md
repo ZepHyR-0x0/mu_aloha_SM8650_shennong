@@ -191,4 +191,7 @@ Every layer of this project builds on the work of the open-source community.
 - `tools/qr_camera_reader`: OpenCV, zxing-cpp, Pillow
 - `devtree/`: Python 3.8+ & PyYAML; Graphviz required for SVG/PNG export
 
+**Agent**
+- help from `deepseek 4.1 flash` and  `GPT 6.1 sol`
+  
 Copyrights of stock binaries belong to Qualcomm and Xiaomi; this repo only extracts and invokes them, and does not redistribute their source code.
