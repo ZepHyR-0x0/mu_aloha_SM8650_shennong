@@ -48,6 +48,20 @@
 
 **相机 / Modem / PCIe / WLAN / NFC** — 未实现
 
+## 界面
+
+<table>
+<tr>
+<td><img src="docs/screenshots/boot-menu.png" width="330" alt="Boot Menu"></td>
+<td><img src="docs/screenshots/usb-function.png" width="330" alt="USB Function"></td>
+</tr>
+<tr>
+<td align="center">Boot Menu —— 5 秒无操作自动进 GUI</td>
+<td align="center">USB Function —— 四种模式可切换</td>
+</tr>
+</table>
+
+截图取自实机（1440×3200，缩放到 720 宽，单张约 90–130 KB）。
 
 ## 一键编译
 
