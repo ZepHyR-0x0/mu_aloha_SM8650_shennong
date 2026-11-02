@@ -1,19 +1,32 @@
 # mu_aloha_SM8650_shennong
 
 > **借鉴或使用本项目时，请在项目的显眼位置注明来源。**
-> 具体要求见 [使用与致谢](#使用与致谢)。
+> 具体要求见 [项目使用](#项目使用)。
 
-**Xiaomi 14 Pro**（shennong / SM8650）的 Project Mu UEFI 移植：SM8650 overlay 源码、一键编译脚本、可启动镜像、**交互式设备树可视化**和**二维码日志识别器**。
+**Xiaomi 14 Pro**（shennong / SM8650）的 Project Mu UEFI 移植：SM8650 overlay 源码、一键编译脚本、可启动镜像 及 测试套件。
 
 - 快照：分支 `pre-touch`，HEAD `a00ac7d7`（b341，2026-11-02）
 - 镜像：`Build/ShennongPkg/xiaomi-shennong.img`，2,711,552 字节
   SHA256 `b6493bc626f7cde22f0381ab8211b94720d4598541bd47e8e8fc64f56832f501`
-- 基线：Project Mu Aloha `main`（子模块钉死到验证过的提交）
-- 现状：见下面「打通情况」
+- 基线：Project Mu Aloha `main`
 
-## 打通情况
+## 界面
 
-只列**能直接感知**的部分；协议、驱动、寄存器层面的细节在 `devtree/` 的状态图里。
+<table>
+<tr>
+<td><img src="docs/screenshots/boot-menu.png" width="330" alt="Boot Menu"></td>
+<td><img src="docs/screenshots/usb-function.png" width="330" alt="USB Function"></td>
+</tr>
+<tr>
+<td align="center">Boot Menu —— 5 秒无操作自动进入 GUI，可退出至设备模式</td>
+<td align="center">USB Function —— 四种模式可切换</td>
+</tr>
+</table>
+<img src="docs/screenshots/uefi-shell-osk.jpg" width="330" alt="UEFI Shell 与屏幕键盘">
+
+**UEFI Shell + 屏幕键盘** —— `alias` 输出的块设备列表，以及底部的软键盘。
+
+## 当前情况
 
 **屏幕显示** — 可用
 - 1440×3200 面板点亮，帧缓冲控制台可读（无 UART 时的唯一输出通道）
@@ -24,7 +37,7 @@
 - 整屏触摸输入，GUI 点击、列表双向滑动、屏幕键盘（OSK）都正常
 - 根因曾是 L12/IOVDD 在 UEFI 里没投电，投上后芯片立即应答
 
-**USB 设备模式** — 可用
+**USB 设备模式（支持USB-CDC/大容量存储设备模式）** — 可用
 - 电脑识别为 `18D1:D00D` / Android Bootloader Interface，标准枚举完整
 - 可切换四种形态：只读 logfs 快照（U 盘）、CDC 串口（Python 控制台）、
   512 MiB RAM 盘、关闭
@@ -51,26 +64,7 @@
 
 **相机 / Modem / PCIe / WLAN / NFC** — 未实现
 
-## 界面
 
-<table>
-<tr>
-<td><img src="docs/screenshots/boot-menu.png" width="330" alt="Boot Menu"></td>
-<td><img src="docs/screenshots/usb-function.png" width="330" alt="USB Function"></td>
-</tr>
-<tr>
-<td align="center">Boot Menu —— 5 秒无操作自动进 GUI</td>
-<td align="center">USB Function —— 四种模式可切换</td>
-</tr>
-</table>
-
-截图取自实机（1440×3200，缩放到 720 宽，单张约 90–130 KB）。
-
-<img src="docs/screenshots/uefi-shell-osk.jpg" width="330" alt="UEFI Shell 与屏幕键盘">
-
-**UEFI Shell + 屏幕键盘** —— `alias` 输出的块设备列表，以及底部的软键盘。
-这是较早的一张照片，画面里还带着 `startup.nsh` 的 5 秒倒计时；该脚本后来已经移除，
-Shell 现在直接进入交互，不再自动执行诊断脚本。
 
 ## 一键编译
 
@@ -106,7 +100,7 @@ Build/ShennongPkg/xiaomi-shennong.img   # fastboot boot 用
 
 ## 可视化设备树
 
-整个可视化页面是**单文件、离线可用的网页**，直接放在仓库里：
+以下展示了项目的详细情况：
 
 **[打开 devtree/examples/out/shennong.html](devtree/examples/out/shennong.html)**
 
@@ -118,27 +112,6 @@ Build/ShennongPkg/xiaomi-shennong.img   # fastboot boot 用
 
 当前快照（`devtree/examples/shennong.state.yaml`，更新于 2026-11-02 / b341）：
 
-| 指标 | 数值 |
-|---|---|
-| 节点 | 107 |
-| 可用 | 40 / 102（39.2%） |
-| 已打通 | 35 |
-| 部分可用 | 48 |
-| 需补丁 | 5 |
-| 实测失败 | 1（SPSS 加载器） |
-| 未开始 | 6 |
-| 无证据 | 7 |
-| 不适用 | 5 |
-
-数据源与重新生成：
-
-```bash
-python3 devtree/devtree_viz.py devtree/examples/shennong.tree.yaml \
-        devtree/examples/shennong.state.yaml -o devtree/examples/out/shennong.html
-# 只校验：加 --check --strict
-```
-
-`devtree_viz.py` 还支持 DOT / SVG / PNG / Mermaid / JSON 输出，以及从 `fdtdump` 文本 DTS 导入设备树骨架（`--import-dts`）。
 
 ## QR 识别器
 
@@ -173,28 +146,57 @@ python tools/qr_camera_reader/qr_camera_reader.py --camera 0
 
 ## 安全约束（来自实际 bring-up）
 
-- 只用 `fastboot boot` 全程内存运行，**不写任何分区**；设备无 EDL，写坏难以恢复。
+- 只用 `fastboot boot` 全程内存运行，**不写任何分区**；xiaomi 14 pro 设备无免授权 EDL，写坏需拆机或移交官方修复。
 - 不拆机、不接 UART，调试只通过 USB / 屏幕二维码。
 - 崩溃恢复：长按电源 10–15 秒。
 - 该镜像面向 **Xiaomi 14 Pro / shennong**；不要刷到其他机型。
 
-## 使用与致谢
+## 项目使用
 
 **如果你借鉴或使用本项目的代码、补丁、文档、截图或设备树可视化数据，请在你自己项目的显眼位置注明来源。**
 
 "显眼位置"指打开项目就能看到的地方，例如：
-
 - README 首屏或开头的说明段
 - 独立的致谢 / Credits 章节
-- 发布说明、项目主页或产品关于页
 
 推荐的表述：
 
-> 本项目的 SM8650 UEFI 移植部分基于 **mu_aloha_SM8650_shennong**（Xiaomi 14 Pro / shennong）的工作。
+> 本项目的 SM8650 UEFI 部分移植基于/参考了 **mu_aloha_SM8650_shennong**（Xiaomi 14 Pro / shennong）的工作。
 
-只需注明来源，不要求开源你的修改；但**请不要删掉本仓库已有的出处说明**，也不要把本项目的工作表述为原创。商业使用与二次分发同样适用。
+只需注明来源，不要求开源你的修改；**请不要删掉本仓库已有的出处说明**，也不要把直接复制本项目的工作表述为原创。商业使用与二次分发同样适用。
 
 ## 许可与免责
 
 代码沿用 Project Mu Aloha 及其子模块的许可证（见 [LICENSE](LICENSE)），第三方组件遵循各自许可证。
 本仓库按“现状”提供，仅用于研究与开发，不提供任何担保，使用风险自负。
+
+## 致谢
+
+这个移植的每一层都建立在别人的工作之上，在此致谢。
+
+**固件框架**
+- [Project Mu](https://github.com/microsoft/mu) 与 [TianoCore EDK II](https://github.com/tianocore/edk2) —— UEFI 框架与构建体系
+- [Project Mu Aloha](https://github.com/Project-Aloha/mu_aloha_platforms) —— 本项目直接派生自它的平台层
+- Microsoft `mu_basecore`、`mu_plus`、`mu_tiano_plus`、`mu_silicon_arm_tiano`、
+  `mu_feature_config`、`mu_feature_dfci` —— 六个基础子模块
+- [SurfaceDuoBinaries-fork](https://github.com/Project-Aloha/SurfaceDuoBinaries-fork) —— 原厂 PE 容器
+- [acpi_oem_third_party_common](https://github.com/Project-Aloha/acpi_oem_third_party_common) 与
+  [CrDK](https://github.com/Project-Aloha/CrDK) —— ACPI 与 Crane 平台包
+- [OpenSSL](https://github.com/openssl/openssl) —— 固定到 `aea7aaf2`；master 已删掉
+  `asn1_err.c`，OpensslLib 会因此编译失败
+
+**设备数据与逆向参考**
+- 本机 Xiaomi 14 Pro 的原厂固件（`uefi_a`、`abl_a`、`xbl_a`、设备树）——
+  寄存器语义、原厂调用链、USB SID40 映射的唯一可信来源
+- [Xiaomi_Kernel_OpenSource-shennong](https://github.com/MiCode/Xiaomi_Kernel_OpenSource) ——
+  eUSB2 repeater 与 DWC3 PHY 的内核实现
+- Xiaomi SM8650 devicetree 源码 —— 引脚、regulator、面板参数
+- [UniXNU](https://github.com/UniXNU) 的 houji 项目 —— 触摸 S3910 驱动的结构参考
+- UEFI-For-OnePlus13R —— 同为 SM8650 / lanai，FD 窗口 `0xA7100000` 的正确取值来源
+
+**工具链**
+- `tools/qr_camera_reader`：OpenCV、zxing-cpp、Pillow
+- `devtree/`：Python 3.8+ 与 PyYAML，导出 SVG/PNG 时另需 Graphviz
+
+原厂二进制的版权属于 Qualcomm 与小米，本仓库只做提取与调用，不重新分发其源码。
+
