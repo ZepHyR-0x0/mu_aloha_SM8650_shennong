@@ -2,7 +2,7 @@
 
 **中文** | [**English**](README_EN.md)
 
-> **借鉴或使用本项目时，请在项目的显眼位置注明来源。**
+> **借鉴或使用本项目时，请在项目的显眼位置注明本项目和上游来源。**
 > 具体要求见 [项目使用](#项目使用)。
 
 **Xiaomi 14 Pro**（shennong / SM8650）的 Project Mu UEFI 移植：SM8650 overlay 源码、一键编译脚本、可启动镜像 及 测试套件。项目旨在为 Xiaomi 14 pro（shennong） 机型的相关 Windows on arm 及其他系统的移植项目（如UniXNU）提供力所能及的帮助。
@@ -157,6 +157,7 @@ python tools/qr_camera_reader/qr_camera_reader.py --camera 0
 ## 项目使用
 
 **如果你借鉴或使用本项目的代码、补丁、文档、截图或设备树可视化数据，请在你自己项目的显眼位置注明来源。**
+若条件允许，请一并注明并致谢上游项目。
 
 "显眼位置"指打开项目就能看到的地方，例如：
 - README 首屏或开头的说明段
