@@ -6,6 +6,13 @@
 #define USB_BRINGUP_PROTOCOL_GUID \
   { 0x7746d19b, 0x1b2e, 0x4a53, { 0x8d, 0x76, 0x39, 0x6a, 0x95, 0x20, 0xc7, 0xe4 } }
 
+#define USB_SPEED_HIGH 0U
+#define USB_SPEED_SUPER_EXPERIMENTAL 4U // DWC DEVSPD, not EFI_USB_BUS_SPEED
+typedef struct {
+  UINT32 Requested, Negotiated, BulkPacketBytes;
+  BOOLEAN FallbackArmed, SwitchBusy;
+} USB_SPEED_INFO;
+
 #define USB_MODE_DISABLED 0U
 #define USB_MODE_NATIVE 1U
 #define USB_MODE_STORAGE 2U
@@ -46,6 +53,10 @@ struct _USB_BRINGUP_PROTOCOL {
   EFI_STATUS (EFIAPI *GetRamInfo)(IN USB_BRINGUP_PROTOCOL *This, USB_RAM_DISK_INFO *Info);
   // Revision 8: queued or active mode changes exclude other changes.
   BOOLEAN (EFIAPI *GetSwitchBusy)(IN USB_BRINGUP_PROTOCOL *This);
+  // Revision 9: volatile speed policy, native Stop/StartEx; SS falls back to
+  // stable HS if it fails to configure within 15 seconds. Reboot defaults HS.
+  EFI_STATUS (EFIAPI *SelectSpeed)(IN USB_BRINGUP_PROTOCOL *This, UINT32 Speed);
+  EFI_STATUS (EFIAPI *GetSpeed)(IN USB_BRINGUP_PROTOCOL *This, USB_SPEED_INFO *Info);
 };
 
 #endif

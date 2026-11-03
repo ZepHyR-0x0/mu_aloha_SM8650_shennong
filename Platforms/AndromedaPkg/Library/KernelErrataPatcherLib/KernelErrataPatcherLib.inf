@@ -21,6 +21,7 @@
 
 [Sources]
   KernelErrataPatcherLib.c
+  WinloadImageCore.h
   BootServicesIntercepter.c
   OsLoaderIntercepter.c
   MmuProtectionHelper.c
@@ -36,6 +37,7 @@
 
 [LibraryClasses]
   BaseMemoryLib
+  CacheMaintenanceLib
   DebugLib
   DxeServicesTableLib
   MemoryAllocationLib

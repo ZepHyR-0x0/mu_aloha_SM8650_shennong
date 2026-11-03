@@ -6,17 +6,18 @@
 STATIC RAM_FILE_STORE mRamFile;
 STATIC struct {
   BOOLEAN Cancelled, ReplyReady;
-  UINT32 WindowEnd;
+  UINT32 WindowEnd, WindowBytes;
   UINT64 LastAt;
   EFI_STATUS Error;
   CHAR8 Reply[128];
 } mRamUpload;
 
-STATIC EFI_STATUS RamUploadBegin(CONST CHAR8 *Path,UINT32 Bytes,UINT32 Crc)
+STATIC EFI_STATUS RamUploadBeginWindow(CONST CHAR8 *Path,UINT32 Bytes,UINT32 Crc,UINT32 Window)
 {
   EFI_STATUS S;
   if(StockCurrentTpl()!=TPL_APPLICATION || mPolling)return EFI_NOT_READY;
   if(mUsbModeSwitchBusy || mUsbModeSwitchQueued)return EFI_NOT_READY;
+  if(Window<RAM_UPLOAD_WINDOW || Window>1024U*1024U || Window%RAM_UPLOAD_WINDOW!=0)return EFI_INVALID_PARAMETER;
   if(mRamDisk==NULL)return EFI_NO_MEDIA;
   if(mRamUsbOwned || mRamMutating)return EFI_ACCESS_DENIED;
   S=RfInit(&mRamFile,mRamDisk,mRamBytes);if(EFI_ERROR(S))return S;
@@ -24,9 +25,11 @@ STATIC EFI_STATUS RamUploadBegin(CONST CHAR8 *Path,UINT32 Bytes,UINT32 Crc)
   mRamMutating=TRUE;ZeroMem(&mRamUpload,sizeof(mRamUpload));
   S=RfBegin(&mRamFile,Path,Bytes,Crc);
   if(EFI_ERROR(S)){mRamMutating=FALSE;(VOID)RamPublish();return S;}
-  mRamUpload.WindowEnd=MIN(Bytes,RAM_UPLOAD_WINDOW);mRamUpload.LastAt=StockTraceNowMs();
+  mRamUpload.WindowBytes=Window;mRamUpload.WindowEnd=MIN(Bytes,Window);mRamUpload.LastAt=StockTraceNowMs();
   return EFI_SUCCESS;
 }
+STATIC EFI_STATUS RamUploadBegin(CONST CHAR8 *Path,UINT32 Bytes,UINT32 Crc)
+{ return RamUploadBeginWindow(Path,Bytes,Crc,RAM_UPLOAD_WINDOW); }
 STATIC VOID RamUploadCancel(VOID)
 {
   // Disconnect may arrive inside the native event pump; defer remount/free.
@@ -40,7 +43,7 @@ STATIC UINT32 StockRamReceiveBytes(VOID)
   // The host pads only the final window. Round its total end, not the
   // remaining length, so a partial completion cannot overrun the window.
   if(End==mRamFile.Expected)End=(End+1023U)&~1023ULL;
-  return (UINT32)MIN(End-mRamFile.Received,RAM_UPLOAD_WINDOW);
+  return (UINT32)MIN(End-mRamFile.Received,USB_FUNCTION_BUFFER_BYTES);
 }
 STATIC BOOLEAN StockRamInput(CONST UINT8 *Data,UINTN Bytes)
 {
@@ -82,7 +85,7 @@ STATIC VOID RamUploadService(BOOLEAN Connected,BOOLEAN CanReply)
     StockSay("[CDCRAM] commit bytes=%u crc=%08x status=%r remount=%r\r\n",mRamFile.Received,mRamFile.ExpectedCrc,S,Mount);
   }else{
     AsciiSPrint(mRamUpload.Reply,sizeof(mRamUpload.Reply),"OK put progress %u",mRamFile.Received);
-    mRamUpload.WindowEnd=mRamFile.Received+MIN(mRamFile.Expected-mRamFile.Received,RAM_UPLOAD_WINDOW);
+    mRamUpload.WindowEnd=mRamFile.Received+MIN(mRamFile.Expected-mRamFile.Received,mRamUpload.WindowBytes);
   }
   mRamUpload.ReplyReady=TRUE;
 }

@@ -18,7 +18,12 @@ STATIC VOID RfPut32(UINT8 *P,UINT32 V){P[0]=(UINT8)V;P[1]=(UINT8)(V>>8);P[2]=(UI
 STATIC CHAR8 RfUpper(CHAR8 C){return C>='a' && C<='z'?(CHAR8)(C-'a'+'A'):C;}
 STATIC BOOLEAN RfEqual(CONST CHAR8 *A,CONST CHAR8 *B){while(*A && RfUpper(*A)==RfUpper(*B)){A++;B++;}return *A==0 && *B==0;}
 STATIC UINT32 RfCrc(UINT32 C,CONST UINT8 *P,UINTN N){
-  while(N--){C^=*P++;for(UINTN I=0;I<8;I++)C=(C>>1)^(0xEDB88320u & (0u-(C&1)));}return C;
+  // IEEE CRC32, unchanged initial/final complement and streaming semantics.
+  // A fixed nibble table avoids eight bit iterations for every uploaded byte.
+  STATIC CONST UINT32 T[16]={0,0x1db71064,0x3b6e20c8,0x26d930ac,
+    0x76dc4190,0x6b6b51f4,0x4db26158,0x5005713c,0xedb88320,0xf00f9344,
+    0xd6d6a3e8,0xcb61b38c,0x9b64c2b0,0x86d3d2d4,0xa00ae278,0xbdbdf21c};
+  while(N--){C^=*P++;C=(C>>4)^T[C&15];C=(C>>4)^T[C&15];}return C;
 }
 STATIC BOOLEAN RfCluster(RAM_FILE_STORE *S,UINT32 C){return C>=2 && C<S->Clusters+2;}
 STATIC UINT8 *RfData(RAM_FILE_STORE *S,UINT32 C){

@@ -12,12 +12,14 @@
 #include <Library/PrintLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeServicesTableLib.h>
+#include <Library/UefiLib.h>
 #include "FrontPage.h"
 #include "FrontPageEventService.h"
 #include "RemoteControl.h"
 #include "BootLog.h"
 
 STATIC USB_BRINGUP_PROTOCOL *mRemoteUsb;
+STATIC BOOLEAN mBootPrepared;
 STATIC EFI_HANDLE mRemoteParent,mCaptureHandle;
 STATIC EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL mCaptureOut;
 STATIC EFI_SIMPLE_TEXT_OUTPUT_MODE mCaptureMode;
@@ -117,6 +119,16 @@ STATIC EFI_STATUS RemoteShell(CONST CHAR8 *Command,CHAR8 *Output,UINTN Capacity,
   if(Launch){
     // A boot application can remain running or call ExitBootServices. Keep
     // the real system console; no capture protocol/stack context is installed.
+    // Manual CDC launches bypass EfiBootManagerBoot. Its ReadyToBoot event
+    // installs the resident kernel errata hook and finalizes ACPI/BGRT.
+    // Signal once per firmware session, before the application's memory map.
+    if(!mBootPrepared){
+      RemoteBootCheckpoint(Command,"efi-ready-to-boot-before",EFI_SUCCESS);
+      EfiSignalEventReadyToBoot();mBootPrepared=TRUE;
+      RemoteBootCheckpoint(Command,"efi-ready-to-boot-after",EFI_SUCCESS);
+    }
+    Status=gBS->SetWatchdogTimer(0,0,0,NULL);
+    RemoteBootCheckpoint(Command,"efi-watchdog-disabled",Status);
     RemoteBootCheckpoint(Command,"efi-shell-start",EFI_SUCCESS);
     Status=gBS->StartImage(Shell,NULL,NULL);
     RemoteBootCheckpoint(Command,"efi-shell-return",Status);

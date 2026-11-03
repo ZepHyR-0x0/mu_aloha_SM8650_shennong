@@ -344,10 +344,19 @@ StockPoll (IN APPLICATION_EVENT_SERVICE_PROTOCOL *This)
     StockCommandService(mFunctions.Connected,mFunctions.TxBusy);
     if (mRemote.HeaderBytes!=0) mFunctions.ReplyActive=TRUE;
     if(mRemote.ModeSwitch && mRemote.AckSubmitted && !mFunctions.TxBusy && !mFunctions.CdcZlpPending){
-      UINT32 Mode=mRemote.SwitchMode,Seconds=mRemote.ReturnSeconds;StockCommandReset();
-      EFI_STATUS Switch=StockSelectMode(NULL,Mode);
+      UINT32 Mode=mRemote.SwitchMode,Seconds=mRemote.ReturnSeconds,Speed=mRemote.SwitchSpeed;
+      BOOLEAN SpeedSwitch=mRemote.SpeedSwitch;StockCommandReset();
+      EFI_STATUS Switch=SpeedSwitch?StockSelectSpeed(NULL,Speed):StockSelectMode(NULL,Mode);
       if(!EFI_ERROR(Switch) && Mode==USB_MODE_RAMDISK && Seconds!=0)mCdcReturnAt=StockTraceNowMs()+(UINT64)Seconds*1000;
       return Switch;
+    }
+  }
+  if(mSpeedFallbackAt!=0 && !mUsbModeSwitchBusy){
+    if(mUsbConfigured)mSpeedFallbackAt=0;
+    else if(StockTraceNowMs()>=mSpeedFallbackAt){
+      mSpeedFallbackAt=0;StockSay("[USBSPEED] SS configuration timeout; returning to HS CDC\r\n");
+      mRequestedSpeed=USB_SPEED_HIGH;mNegotiatedSpeed=0;
+      return StockSelectMode(NULL,USB_MODE_CDC);
     }
   }
   if(mCdcReturnAt!=0 && StockTraceNowMs()>=mCdcReturnAt){
@@ -878,8 +887,8 @@ StockTest (IN USB_BRINGUP_PROTOCOL *This)
   return Status;
 }
 
-STATIC USB_BRINGUP_PROTOCOL mBringup = { 8, StockEnableNative, NULL, NULL, StockSelectMode, StockGetMode,
-  StockSetRamSize,StockGetRamSize,StockSetShellConsole,StockSetRemoteExecutor,StockCreateRamDisk,StockGetRamInfo,StockGetSwitchBusy };
+STATIC USB_BRINGUP_PROTOCOL mBringup = { 9, StockEnableNative, NULL, NULL, StockSelectMode, StockGetMode,
+  StockSetRamSize,StockGetRamSize,StockSetShellConsole,StockSetRemoteExecutor,StockCreateRamDisk,StockGetRamInfo,StockGetSwitchBusy,StockSelectSpeed,StockGetSpeed };
 STATIC APPLICATION_EVENT_SERVICE_PROTOCOL mApplicationService = { 1, NULL, StockPoll };
 
 // DT names stream 0x40. Its effective configuration and DMA behaviour are

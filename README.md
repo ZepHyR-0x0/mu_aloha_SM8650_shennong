@@ -8,8 +8,8 @@
 **Xiaomi 14 Pro**（shennong / SM8650）的 Project Mu UEFI 移植：SM8650 overlay 源码、一键编译脚本、可启动镜像 及设备树。项目旨在为 Xiaomi 14 pro（shennong） 机型的相关 Windows on arm 及其他系统的移植项目（如UniXNU）提供力所能及的帮助。
 
 - 开发快照：2026-11-03，DEBUG / ShennongNoSb
-- 镜像：`Build/ShennongPkg/xiaomi-shennong.img`，2,785,280 字节
-  SHA256 `c55947484c7c9635df6791e6ba2728a970531a267bd822934ce7a8824d29593e`
+- 镜像：`Build/ShennongPkg/xiaomi-shennong.img`，2,789,376 字节
+  SHA256 `0f6d90402184ea33bf5c28a362d453d3bc9ab3c4202a21e54a4b9fe4d6c9fb2e`
 - 基线：Project Mu Aloha `dev/update/mu202502`
 
 ## 界面
@@ -38,18 +38,18 @@
 | 屏幕 / 触摸 / OSK | 可用：1440×3200 帧缓冲、GUI 和屏幕键盘 |
 | CDC / cdcshell | 可用：日志、硬件测试、Shell、文件上传和 EFI 启动命令 |
 | RAM disk | 64..8192 MiB，分配失败会明确报错；64 / 128 MiB 实机精确分配通过，8 GiB 实机分配未验收 |
-| CDC 上传 / Shell | 98 字节 NSH、131333 字节多窗口文件 CRC 回读与 NSH 执行通过；33280 字节 ARM64 EFI 上传并启动返回通过 |
+| CDC 上传 / Shell | 默认 1 MiB 确认窗口；同候选 4 MiB 交替上传约 0.68 → 1.78 MiB/s，四次 CRC 一致；NSH 与 3072 字节 EFI 执行/返回通过 |
 | USB MSC | 共享 RAM 已在 Windows 挂载，文件读取校验和定时回 CDC 后回读通过。 |
 | USB 热拔插 | 多次真实 CDC 拔插后自动恢复，含日志接收中断；原文件 CRC 保留与再次切换通过。大文件替换上传中拔线的实机验收尚未捕获。 |
 | UFS | 原厂 LUN/GPT 读取、FAT 浏览；非加密 ext4 只读驱动已集成，保持普通存储写/擦除保护 |
 | RPMB | 原始响应只读成功；类型、结果、地址、nonce、前后计数器核对，MAC 未认证；无写/密钥/解锁接口 |
 | 震动 | 用户确认明显震动；TEST 独立页面，时长与强度滑动条，DIRECT_PLAY gain 映射 |
 | 闪光灯 | 用户确认发光；双通道短脉冲测试、关闭与配置恢复 |
-| ACPI | 实机 15 张表、关联与适用 checksum 核对，8 CPU；WinPE 平台适配未完成 |
-| ARM64 WinPE | 当前候选重试：完整目录上传、WIM CRC 与四个启动文件列表检查通过；启动后回到 Android，旧日志最后保存点为 efi-shell-start（进入 Shell 前），没有对应返回记录。PE 启动失败，重启原因待定位。 |
+| ACPI | 实机 15 张表、8 个 80 字节 GICC、独立 GICR、GTDT 29/30/27/26 与 Always On 核对；bootcheck 可见，Windows 平台适配未完成 |
+| ARM64 WinPE | 本轮完整目录上传、WIM CRC 和四个启动文件列表通过；执行启动后用户观察到鼠标保留、GUI 背景黑屏，随后重启，主机枚举为 Android ADB。PE 启动失败，具体重启原因未确定。 重启后读回171750字节旧快照，ReadyToBoot与watchdog关闭可见，最后保存点为efi-shell-start，尚无EBS/内核错误记录。 |
 | SMC / TZ | 普通 SMC、QSEE 版本、PAS 能力及 Keymaster 句柄查询；安全应用业务与子系统启动未完成 |
-| WiFi / 蓝牙 | TEST/CDC 列表与 provider 状态可用；真实 AP / BLE 扫描后端缺失 |
-| GPS / 陀螺仪 / 加速度 | 固件与平台依赖查询可用，定位和实时采样未完成 |
+| WiFi / 蓝牙 | WCN7850 电源/时钟/PHY/PCIe 链路及 17cb:1107 识别通过、资源恢复成功；真实 AP/BLE 扫描后端仍缺失 |
+| GPS / 陀螺仪 / 加速度 | SMEM 中 ADSP/MODEM/CDSP 描述符与 16 KiB TX 可读，RX 未建立；没有定位或实时采样数据 |
 | 亮度 | 可查询 DCS provider；当前 provider 缺失，调节未完成 |
 | 电池 / 充电 | 部分 getter 可用，电量、温度与充电控制未完成 |
 | 相机 / 麦克风 / 扬声器 / GPU | 业务驱动未完成 |
@@ -60,15 +60,15 @@ USB 只走 stock 硬件链，原厂 UsbInitDxe、UsbfnDwc3Dxe、UsbDeviceDxe 未
 
 CDC、USB Function 和本地文件系统共用同一块 RAM，不复制盘面。上传时独占 RAM，禁止切换或释放；MSC 接管时撤销本地挂载，归还后恢复本地只读访问。同容量 create 复用原盘，改变容量需要先 release。
 
-固件与客户端默认 CDC line coding 为 3,000,000 8N1，客户端可用 `--baud 115200` 覆盖。baud 配置本身不限制这条 USB 数据路径；文件接收按剩余窗口批量提交，单次最大 64 KiB，末窗补零最多 1023 字节，仍校验 CRC 并在断线时取消未提交替换。客户端按已知长度读取每个 64 KiB 窗口的 ACK，避免等待 64 KiB 接收缓冲填满；普通命令和长正文沿用原接收路径。相同固件交替上传 4 MiB，旧客户端约 0.49 MiB/s，新客户端约 0.68 MiB/s，提升 40%，CRC 与完整日志帧通过。344.1 MiB WIM 实测 256.4 秒，平均 1.34 MiB/s，CRC 回读通过。页面上传期间使用最多 16 次 / 4 ms 的应用事件服务，并在页面等待中每 1 ms 服务；上传结束或取消后恢复正常等待。USB 驱动二进制与 30 项源码锁保持不变。
+固件与客户端默认 CDC line coding 为 3,000,000 8N1，baud 本身不限制 USB 吞吐量。默认客户端使用 `put2` 协商 1 MiB 确认窗口，每次 DMA 仍不超过 64 KiB；可用 `--upload-window 65536` 选择旧窗口。旧固件只有明确返回未知命令时才回退 `put`。CRC32 改用固定 nibble 表，末窗保留最多 1023 字节补零、流式 CRC 和断线取消未提交替换。相同候选交替上传 4 MiB，64 KiB 窗口为 0.67–0.68 MiB/s，1 MiB 窗口为 1.78 MiB/s，约 2.6 倍，四次 CRC 一致。 本轮 344.1 MiB WIM 上传 186.2 秒（1.85 MiB/s），CRC 回读通过。 性能对照来自 1fa1536c 候选；发布候选的 USB 模块二进制一致，平台与 Windows 检查在发布候选复测。
 
 正常停止后使用原厂 Stop/StartEx 流程，仅在 halt 未确认时尝试原厂初始化；停止失败保留 DMA 缓冲和 RAM。同模式 CDC 停止/重启与共享文件 CRC 回读已通过。
 
 切换从排队开始禁止其他切换、RAM 大小修改和释放。TEST 显示 switching 状态；驱动对重入返回 Already Started。回切先等待当前控制/BOT 事务完成，最多 5 秒；成功、拔线、超时和停止失败均完成收尾并释放切换锁。停止失败时保留 DMA 缓冲，后续重连或再次请求可重试。CDC 检测实际线缆下降沿，取消会话，并在 pump 外经过 200 ms 后走原厂 Stop/StartEx；普通总线 reset 不触发这条重建。多次真实 CDC 拔插后自动恢复，含日志接收中断；原文件 CRC 保留与再次切换通过。大文件替换上传中拔线的实机验收尚未捕获。
 
-当前 USB 上层候选与 stock 硬件链按本页镜像及源码锁固定，后续平台推进沿用这个版本。
+USB 原厂硬件二进制保持不变；本轮授权扩展后的源码锁已更新。默认 HS；`usb speed ss` 是易失实验选项，也可从 TEST → USB host 进入速度页面。SS 无法配置时 15 秒回 HS CDC，启动失败也走现有 DMA 安全恢复路径；切换与上传共用互斥。实机 SS 请求和切回 HS 成功，但本次实际仍为 HS / 512 字节包，USB 3.0 链路尚未验收。重启恢复 HS 默认。
 
-EFI 启动路径会把 Shell 启动前、返回后及 Shell 加载失败时的日志写入现有受限 logfs 日志区；重启后可用 `logcat-last` 读回。3072 字节 ARM64 EFI 的执行标记、返回与冷重启后 154821 字节旧快照 CRC 已通过。当前镜像只追加 FrontPage 的启动日志保存点；上传性能记录来自前一候选；当前候选 PE 重试已取回启动边界快照，重启原因仍待定位。
+远程 EFI 启动会先触发一次 ReadyToBoot，记录前后保存点并关闭 UEFI watchdog，再由真实 Shell 控制台启动。测试 EFI 执行标记、返回及 `[WINLOAD] ReadyToBoot` 日志已验证。RAM backing 使用 EfiReservedMemoryType，设备路径保留原所有权标记并追加标准 RAM disk 节点；仍是同一块共享内存和本地只读 BlockIo。Windows 修补器纠正 PE SizeOfImage 偏移（PE+0x50），限制镜像查找和修补边界，并清理代码缓存。本机 EL1 下 ACTLR_EL1 只读成功，关闭继承的 ACTLR 删除补丁；尚不能认定它是此前重启的根因。
 
 ```text
 ramdisk create 64
@@ -88,6 +88,15 @@ test wireless-scan
 test bluetooth
 test sensors
 test brightness-status
+test bootcheck
+test glink
+test mhi
+test transports
+test gyro
+test gps
+usb speed
+usb speed ss
+usb speed hs
 haptic level 500 75 direct
 ```
 
@@ -99,7 +108,15 @@ python tools/cdc-console.py --port COM20
 
 `FSx` 从 `shell map -r` 查找，不能固定盘符。`boot` 只接受单个映射 `.efi` 路径，ACK 后启动并使用真实控制台；客户端保持串口等待返回，断连或未观察到返回会明确报告。NSH 使用 `shell` 命令执行。FAT32 单文件最多 4294967295 字节；大盘不等于可存放大于 4 GiB 的单文件。8 GiB 上限按实际可用内存分配，不自动缩容。
 
-已使用本地 ADK 28000.1 构建 344.1 MiB 的 ARM64 命令行 PE，普通 LZX 压缩；未添加桌面、PowerShell、.NET 或第三方驱动。SAN 默认 OfflineAll，关闭自动挂载。当前候选重试：完整目录上传、WIM CRC 与四个启动文件列表检查通过；启动后回到 Android，旧日志最后保存点为 efi-shell-start（进入 Shell 前），没有对应返回记录。PE 启动失败，重启原因待定位。
+已使用本地 ADK 28000.1 构建 344.1 MiB ARM64 命令行 PE，LZX，SAN OfflineAll、关闭自动挂载。本轮完整目录上传、WIM CRC 和四个启动文件列表通过；执行启动后用户观察到鼠标保留、GUI 背景黑屏，随后重启，主机枚举为 Android ADB。PE 启动失败，具体重启原因未确定。 重启后读回171750字节旧快照，ReadyToBoot与watchdog关闭可见，最后保存点为efi-shell-start，尚无EBS/内核错误记录。
+
+微软的 [WinPE USB 制作说明](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive?view=windows-11) 使用 FAT32；当前 WIM 小于 4 GiB，不需要 NTFS。继续核对 [UEFI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/uefi-requirements-that-apply-to-all-windows-platforms) 与 [ACPI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/acpi-system-description-tables)。同 SoC 的 [giulia ACPI 存档](https://github.com/DianKuang0120/giulia-acpi-archive) 和 [RedMagic 9 WoA 记录](https://github.com/0Re0-8192/rm9-windows-arm64) 用于对照 ACTLR、GIC/GTDT、看门狗和 MHI/QMI；这些设备的成功记录不代表 Shennong 已支持 Windows。
+
+微软的 [WinPE USB 制作说明](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive?view=windows-11) 使用 FAT32；当前 WIM 小于 4 GiB，不需要 NTFS。继续核对 [UEFI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/uefi-requirements-that-apply-to-all-windows-platforms) 与 [ACPI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/acpi-system-description-tables)。同 SoC 的 [giulia ACPI 存档](https://github.com/DianKuang0120/giulia-acpi-archive) 和 [RedMagic 9 WoA 记录](https://github.com/0Re0-8192/rm9-windows-arm64) 用于对照 ACTLR、GIC/GTDT、看门狗和 MHI/QMI；这些设备的成功记录不代表 Shennong 已支持 Windows。
+
+微软的 [WinPE USB 制作说明](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive?view=windows-11) 使用 FAT32；当前 WIM 小于 4 GiB，不需要 NTFS。继续核对 [UEFI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/uefi-requirements-that-apply-to-all-windows-platforms) 与 [ACPI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/acpi-system-description-tables)。同 SoC 的 [giulia ACPI 存档](https://github.com/DianKuang0120/giulia-acpi-archive) 和 [RedMagic 9 WoA 记录](https://github.com/0Re0-8192/rm9-windows-arm64) 用于对照 ACTLR、GIC/GTDT、看门狗和 MHI/QMI；这些设备的成功记录不代表 Shennong 已支持 Windows。
+
+微软的 [WinPE USB 制作说明](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive?view=windows-11) 使用 FAT32；当前 WIM 小于 4 GiB，不需要 NTFS。继续核对 [UEFI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/uefi-requirements-that-apply-to-all-windows-platforms) 与 [ACPI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/acpi-system-description-tables)。同 SoC 的 [giulia ACPI 存档](https://github.com/DianKuang0120/giulia-acpi-archive) 和 [RedMagic 9 WoA 记录](https://github.com/0Re0-8192/rm9-windows-arm64) 用于对照 ACTLR、GIC/GTDT、看门狗和 MHI/QMI；这些设备的成功记录不代表 Shennong 已支持 Windows。
 
 ## 一键编译
 
@@ -143,7 +160,7 @@ Build/ShennongPkg/xiaomi-shennong.img   # fastboot boot 用
 
 > 部分 Markdown 预览器（包括 GitHub）出于安全策略不渲染 `iframe`。遇到这种情况请直接点上面的链接，或把仓库克隆到本地后用浏览器打开 `devtree/examples/out/shennong.html`。
 
-离线交互设备树含 119 个节点，可搜索、过滤状态并查看依赖。状态更新于 2026-11-03，明确区分实机成功、部分可用与待实现；列表页面存在不代表无线或传感器已驱动。
+离线交互设备树含 122 个节点，可搜索、过滤状态并查看依赖。状态更新于 2026-11-03，明确区分实机成功、部分可用与待实现；列表页面存在不代表无线或传感器已驱动。
 
 ## QR 识别器
 

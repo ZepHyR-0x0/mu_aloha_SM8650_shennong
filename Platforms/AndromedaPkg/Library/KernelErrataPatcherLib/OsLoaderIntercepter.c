@@ -15,6 +15,8 @@
 **/
 #include "KernelErrataPatcherLib.h"
 #include "ShellCode.h"
+#include <Library/CacheMaintenanceLib.h>
+STATIC EFI_PHYSICAL_ADDRESS mWinloadEnd;
 
 #if PLATFORM_HAS_ACTLR_EL1_UNIMPLEMENTED_ERRATA == 0
 #if PLATFORM_HAS_AMCNTENSET0_EL0_UNIMPLEMENTED_ERRATA == 0
@@ -83,7 +85,7 @@ VOID InjectCodeIntoOsLoaderArm64TransferToKernel(
 
   FirmwarePrint(
       "Patching OsLoaderArm64TransferToKernel -> (phys) 0x%p\n",
-      OslArm64TransferToKernelAddr);
+      NewOslArm64TransferToKernelAddr + sizeof(OslArm64TransferToKernelShellCode));
 
   // Copy shell code right before the
   // OsLoaderArm64TransferToKernelFunction
@@ -91,6 +93,10 @@ VOID InjectCodeIntoOsLoaderArm64TransferToKernel(
       NewOslArm64TransferToKernelAddr,
       (EFI_PHYSICAL_ADDRESS)OslArm64TransferToKernelShellCode,
       sizeof(OslArm64TransferToKernelShellCode));
+  WriteBackDataCacheRange((VOID *)(UINTN)current,sizeof(UINT32));
+  InvalidateInstructionCacheRange((VOID *)(UINTN)current,sizeof(UINT32));
+  WriteBackDataCacheRange((VOID *)(UINTN)NewOslArm64TransferToKernelAddr,sizeof(OslArm64TransferToKernelShellCode));
+  InvalidateInstructionCacheRange((VOID *)(UINTN)NewOslArm64TransferToKernelAddr,sizeof(OslArm64TransferToKernelShellCode));
 }
 
 BOOLEAN FindAndInjectIntoOsLoaderArm64TransferToKernel(
@@ -101,9 +107,11 @@ BOOLEAN FindAndInjectIntoOsLoaderArm64TransferToKernel(
       winloadBase + 0xC00 + BaseOffset;
   EFI_PHYSICAL_ADDRESS NewOslArm64TransferToKernelAddr =
       OslArm64TransferToKernelAddr - sizeof(OslArm64TransferToKernelShellCode);
+  if(NewOslArm64TransferToKernelAddr<winloadBase+EFI_PAGE_SIZE ||
+     OslArm64TransferToKernelAddr>=mWinloadEnd)return FALSE;
 
   for (EFI_PHYSICAL_ADDRESS current = OslArm64TransferToKernelAddr;
-       current < OslArm64TransferToKernelAddr + SCAN_MAX;
+       current < OslArm64TransferToKernelAddr + SCAN_MAX && current+8<=mWinloadEnd;
        current += sizeof(UINT32)) {
 
     if (ARM64_BRANCH_LOCATION_INSTRUCTION(
@@ -126,8 +134,11 @@ VOID OslInterceptMain(IN EFI_PHYSICAL_ADDRESS fwpKernelSetupPhase1)
   UINTN                tempSize = SCAN_MAX;
   EFI_PHYSICAL_ADDRESS winloadBase =
       LocateWinloadBase(fwpKernelSetupPhase1, &tempSize);
+  if(winloadBase==0 || tempSize<=EFI_PAGE_SIZE)return;
+  mWinloadEnd=winloadBase+tempSize;
+  FirmwarePrint("[WINLOAD] validated base=%lx image_bytes=%lu\n",winloadBase,(UINT64)tempSize);
 
-  EFI_STATUS Status = UnprotectWinload(winloadBase + EFI_PAGE_SIZE, tempSize);
+  EFI_STATUS Status = UnprotectWinload(winloadBase + EFI_PAGE_SIZE, tempSize-EFI_PAGE_SIZE);
   if (EFI_ERROR(Status)) {
     FirmwarePrint(
         "Could not unprotect winload -> (phys) 0x%p (size) 0x%p %r\n",
@@ -143,7 +154,7 @@ VOID OslInterceptMain(IN EFI_PHYSICAL_ADDRESS fwpKernelSetupPhase1)
       fwpKernelSetupPhase1, SCAN_MAX);
 
 #if PLATFORM_HAS_ACTLR_EL1_UNIMPLEMENTED_ERRATA == 1
-  KernelErrataPatcherApplyReadACTLREL1Patches(fwpKernelSetupPhase1, SCAN_MAX);
+  KernelErrataPatcherApplyReadACTLREL1Patches(fwpKernelSetupPhase1,MIN(SCAN_MAX,mWinloadEnd-fwpKernelSetupPhase1));
 #endif
 
   BOOLEAN InjectedShellCode = FindAndInjectIntoOsLoaderArm64TransferToKernel(
@@ -174,7 +185,9 @@ VOID OslInterceptMain(IN EFI_PHYSICAL_ADDRESS fwpKernelSetupPhase1)
       "Protecting winload        -> (phys) 0x%p (size) 0x%p\n", winloadBase,
       tempSize);
 
-  Status = ReProtectWinload(winloadBase + EFI_PAGE_SIZE, tempSize);
+  WriteBackDataCacheRange((VOID *)(UINTN)(winloadBase+EFI_PAGE_SIZE),tempSize-EFI_PAGE_SIZE);
+  InvalidateInstructionCacheRange((VOID *)(UINTN)(winloadBase+EFI_PAGE_SIZE),tempSize-EFI_PAGE_SIZE);
+  Status = ReProtectWinload(winloadBase + EFI_PAGE_SIZE, tempSize-EFI_PAGE_SIZE);
   if (EFI_ERROR(Status)) {
     FirmwarePrint(
         "Could not reprotect winload -> (phys) 0x%p (size) 0x%p %r\n",

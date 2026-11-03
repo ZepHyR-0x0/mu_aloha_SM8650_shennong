@@ -48,7 +48,7 @@ STATIC VOID StockMscSaveService (EFI_STATUS Status)
 STATIC BOOLEAN StockFunctionMessage (EFI_USBFN_MESSAGE Message, UINTN Size, EFI_USBFN_MESSAGE_PAYLOAD *P)
 {
   if (Message==EfiUsbMsgBusEventReset || Message==EfiUsbMsgBusEventDetach) mResetSeen=TRUE;
-  if (Message==EfiUsbMsgBusEventSpeed && Size>=sizeof(P->ubs)) mSpeedSeen=P->ubs;
+  if (Message==EfiUsbMsgBusEventSpeed && Size>=sizeof(P->ubs)) {mSpeedSeen=P->ubs;mNegotiatedSpeed=P->ubs;}
   if (Message==EfiUsbMsgSetupPacket && Size>=sizeof(P->udr) &&
       P->udr.RequestType==2 && P->udr.Request==1 && P->udr.Value==0 && P->udr.Length==0)
     mClearSeen=(UINT8)P->udr.Index;
@@ -178,7 +178,7 @@ STATIC EFI_STATUS StockFunctionEvent (USB_DEVICE_EVENT Event, UINTN Bytes, USB_D
   if (mSpeedSeen!=0 && mTraceFn!=NULL) {
     Packet=0;
     Status=mTraceFn->GetEndpointMaxPacketSize(mTraceFn,UsbEndpointBulk,(EFI_USB_BUS_SPEED)mSpeedSeen,&Packet);
-    if (!EFI_ERROR(Status) && (Packet==64 || Packet==512 || Packet==1024)) mFunctions.PacketSize=Packet;
+    if (!EFI_ERROR(Status) && (Packet==64 || Packet==512 || Packet==1024)) mFunctions.PacketSize=mNegotiatedPacket=Packet;
     mSpeedSeen=0;Status=EFI_SUCCESS;
   }
   if (Event==UsbDeviceEventDeviceStateChange && Bytes>=sizeof(Data->DeviceState)) {
@@ -439,3 +439,34 @@ STATIC EFI_STATUS EFIAPI StockSelectMode (USB_BRINGUP_PROTOCOL *This, UINT32 Mod
 }
 STATIC EFI_STATUS EFIAPI StockEnableNative (USB_BRINGUP_PROTOCOL *This)
 { return StockSelectMode(This,USB_MODE_NATIVE); }
+
+STATIC EFI_STATUS EFIAPI StockGetSpeed(USB_BRINGUP_PROTOCOL *This,USB_SPEED_INFO *Info)
+{
+  (VOID)This;if(Info==NULL)return EFI_INVALID_PARAMETER;
+  Info->Requested=mRequestedSpeed;Info->Negotiated=mNegotiatedSpeed;
+  Info->BulkPacketBytes=mFunctions.PacketSize;
+  Info->FallbackArmed=mSpeedFallbackAt!=0;Info->SwitchBusy=StockGetSwitchBusy(This);
+  return EFI_SUCCESS;
+}
+STATIC EFI_STATUS EFIAPI StockSelectSpeed(USB_BRINGUP_PROTOCOL *This,UINT32 Speed)
+{
+  EFI_STATUS S;UINT32 Mode=mActiveMode,Old=mRequestedSpeed;
+  if(Speed!=USB_SPEED_HIGH && Speed!=USB_SPEED_SUPER_EXPERIMENTAL)return EFI_INVALID_PARAMETER;
+  if(StockGetSwitchBusy(This))return EFI_ALREADY_STARTED;
+  if(StockCurrentTpl()!=TPL_APPLICATION || mPolling)return EFI_NOT_READY;
+  if(mRamMutating || mConsoleAttached)return EFI_ACCESS_DENIED;
+  if(Mode==USB_MODE_DISABLED)Mode=USB_MODE_CDC;
+  mRequestedSpeed=Speed;mNegotiatedSpeed=mNegotiatedPacket=0;
+  S=StockSelectMode(This,Mode);
+  if(EFI_ERROR(S)){
+    mRequestedSpeed=USB_SPEED_HIGH;mSpeedFallbackAt=0;
+    // Startup failures may leave no pump. Restore synchronously through the
+    // same DMA-safe stop/reset path; never free retained live DMA buffers.
+    if(Speed==USB_SPEED_SUPER_EXPERIMENTAL){
+      EFI_STATUS Restore=StockSelectMode(This,USB_MODE_CDC);
+      StockSay("[USBSPEED] startup failure; HS CDC restore=%r\r\n",Restore);
+    }else mRequestedSpeed=Old;
+  }else mSpeedFallbackAt=Speed==USB_SPEED_SUPER_EXPERIMENTAL?StockTraceNowMs()+15000:0;
+  StockSay("[USBSPEED] requested=%u native-restart=%r fallback_ms=%u\r\n",Speed,S,mSpeedFallbackAt?15000:0);
+  return S;
+}

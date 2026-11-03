@@ -8,7 +8,8 @@ STATIC struct {
   CHAR8 Header[512],Footer[32],Action[128];
   UINTN HeaderBytes,FooterBytes;
   BOOLEAN Pending,Running,Cancelled,Reboot,Boot,AckSubmitted,ControlCommand,ModeSwitch;
-  UINT32 SwitchMode,ReturnSeconds;
+  UINT32 SwitchMode,ReturnSeconds,SwitchSpeed;
+  BOOLEAN SpeedSwitch;
 } mRemote;
 STATIC USB_REMOTE_EXECUTOR mRemoteExecute;
 STATIC VOID *mRemoteContext;
@@ -124,16 +125,24 @@ STATIC VOID StockRamCommand(CONST CHAR8 *Action)
     if(!EFI_ERROR(S)){
       mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"OK ramdisk hash bytes=%u crc=0x%08x\r\n",N,Crc);return;
     }
-  }else if(AsciiStrnCmp(Action,"put ",4)==0){
-    CHAR8 Path[128];UINTN Length=AsciiStrLen(Action+4),At;
-    CopyMem(Path,Action+4,Length+1);At=Length;
+  }else if(AsciiStrnCmp(Action,"put ",4)==0 || AsciiStrnCmp(Action,"put2 ",5)==0){
+    BOOLEAN V2=AsciiStrnCmp(Action,"put2 ",5)==0;
+    UINT32 Window=RAM_UPLOAD_WINDOW;
+    CONST CHAR8 *Args=Action+(V2?5:4);
+    CHAR8 Path[128];UINTN Length=AsciiStrLen(Args),At;
+    CopyMem(Path,Args,Length+1);At=Length;
+    if(V2){
+      while(At!=0 && Path[At-1]!=' ')At--;
+      if(At==0 || !StockNumber(Path+At,&Window))goto Done;
+      Path[--At]=0;
+    }
     while(At!=0 && Path[At-1]!=' ')At--;
     if(At==0 || !StockNumber(Path+At,&Crc))goto Done;
     Path[--At]=0;while(At!=0 && Path[At-1]!=' ')At--;
     if(At==0 || !StockNumber(Path+At,&N))goto Done;
-    Path[--At]=0;S=RamUploadBegin(Path,N,Crc);
+    Path[--At]=0;S=V2?RamUploadBeginWindow(Path,N,Crc,Window):RamUploadBegin(Path,N,Crc);
     if(!EFI_ERROR(S)){
-      mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"OK put ready %u window=65536 pad=1024\r\n",N);return;
+      mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"OK put ready %u window=%u pad=1024\r\n",N,Window);return;
     }
   }
 Done:
@@ -208,21 +217,30 @@ STATIC VOID StockCommandInput (CONST CHAR8 *Command, UINTN Length)
     if (Line[I]>='A' && Line[I]<='Z') Line[I]+='a'-'A';
   if (AsciiStrCmp(Name,"!long")==0) { StockCommandText("ERR command too long");return; }
   if (AsciiStrCmp(Name,"!busy")==0) { StockCommandText("ERR command queue full");return; }
-  if (AsciiStrCmp(Name,"help")==0) { StockCommandText("OK logcat | logcat-last | logsync | scrcat | press <key> | reboot [system|bootloader|recovery] | shell <command> | boot <mapped.efi> | test <args> | haptic <args> | rpmb-info | rpmb-read <address> <count> | ramdisk create <MiB> | ramdisk info | ramdisk hash <path> | ramdisk release | put <path> <bytes> <crc> | usb [cdc|ramdisk [return-seconds]|off]");return; }
-  if(AsciiStrnCmp(Name,"ramdisk ",8)==0 || AsciiStrnCmp(Name,"put ",4)==0){
+  if (AsciiStrCmp(Name,"help")==0) { StockCommandText("OK logcat | logcat-last | logsync | scrcat | press <key> | reboot [system|bootloader|recovery] | shell <command> | boot <mapped.efi> | test <args> | haptic <args> | rpmb-info | rpmb-read <address> <count> | ramdisk create <MiB> | ramdisk info | ramdisk hash <path> | ramdisk release | put <path> <bytes> <crc> | usb [cdc|ramdisk [return-seconds]|off|speed [hs|ss]] | put2 <path> <bytes> <crc> <window-bytes>");return; }
+  if(AsciiStrnCmp(Name,"ramdisk ",8)==0 || AsciiStrnCmp(Name,"put ",4)==0 || AsciiStrnCmp(Name,"put2 ",5)==0){
     if(mUsbModeSwitchBusy || mUsbModeSwitchQueued){StockCommandText("ERR ramdisk USB switch in progress");return;}
     CopyMem(mRemote.Action,Name,AsciiStrLen(Name)+1);mRemote.Pending=mRemote.ControlCommand=TRUE;return;
+  }
+  if(AsciiStrCmp(Name,"usb speed")==0){
+    mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),
+      "OK usb speed requested=%u negotiated_efi=%u packet=%u fallback=%u busy=%u\r\n",
+      mRequestedSpeed,mNegotiatedSpeed,mNegotiatedPacket,mSpeedFallbackAt!=0,mUsbModeSwitchBusy||mUsbModeSwitchQueued);return;
   }
   if(AsciiStrnCmp(Name,"usb ",4)==0){
     if(mUsbModeSwitchBusy || mUsbModeSwitchQueued){StockCommandText("ERR usb switch in progress");return;}
     if(mRamMutating){StockCommandText("ERR usb upload active");return;}
-    if(AsciiStrCmp(Name+4,"cdc")==0)mRemote.SwitchMode=USB_MODE_CDC;
+    if(AsciiStrCmp(Name+4,"speed hs")==0 || AsciiStrCmp(Name+4,"speed ss")==0){
+      mRemote.SwitchSpeed=AsciiStrCmp(Name+4,"speed ss")==0?USB_SPEED_SUPER_EXPERIMENTAL:USB_SPEED_HIGH;
+      mRemote.SpeedSwitch=TRUE;mRemote.SwitchMode=USB_MODE_CDC;
+    }
+    else if(AsciiStrCmp(Name+4,"cdc")==0)mRemote.SwitchMode=USB_MODE_CDC;
     else if(AsciiStrCmp(Name+4,"off")==0)mRemote.SwitchMode=USB_MODE_DISABLED;
     else if(AsciiStrCmp(Name+4,"ramdisk")==0)mRemote.SwitchMode=USB_MODE_RAMDISK;
     else if(AsciiStrnCmp(Name+4,"ramdisk ",8)==0 && StockNumber(Name+12,&mRemote.ReturnSeconds) && mRemote.ReturnSeconds>=1 && mRemote.ReturnSeconds<=300)mRemote.SwitchMode=USB_MODE_RAMDISK;
     else {StockCommandText("ERR usb mode or return-seconds (1..300)");return;}
     if(mRemote.SwitchMode==USB_MODE_RAMDISK && mRamDisk==NULL){StockCommandText("ERR usb create ramdisk first");return;}
-    mRemote.ModeSwitch=TRUE;mUsbModeSwitchQueued=TRUE;mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"OK usb mode=%u return_cdc_seconds=%u\r\n",mRemote.SwitchMode,mRemote.ReturnSeconds);return;
+    mRemote.ModeSwitch=TRUE;mUsbModeSwitchQueued=TRUE;mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"OK usb mode=%u return_cdc_seconds=%u speed=%u\r\n",mRemote.SwitchMode,mRemote.ReturnSeconds,mRemote.SpeedSwitch?mRemote.SwitchSpeed:mRequestedSpeed);return;
   }
   if(AsciiStrnCmp(Name,"test ",5)==0 || AsciiStrnCmp(Name,"haptic ",7)==0 ||
      AsciiStrCmp(Name,"rpmb-info")==0 || AsciiStrnCmp(Name,"rpmb-read ",10)==0){

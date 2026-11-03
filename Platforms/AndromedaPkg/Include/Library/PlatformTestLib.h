@@ -63,6 +63,10 @@ typedef struct {
 } PLATFORM_SENSOR_RESULT;
 EFI_STATUS PlatformSensorTest (IN PLATFORM_TEST_OUTPUT Output OPTIONAL, IN VOID *Context OPTIONAL,
                               OUT PLATFORM_SENSOR_RESULT *Result);
+typedef struct { EFI_STATUS Smem, Adsp, Modem, Cdsp, Mhi; } PLATFORM_TRANSPORT_RESULT;
+EFI_STATUS PlatformTransportTest(PLATFORM_TEST_OUTPUT Output,VOID *Context,PLATFORM_TRANSPORT_RESULT *Result);
+EFI_STATUS PlatformTransportTestSelected(PLATFORM_TEST_OUTPUT Output,VOID *Context,PLATFORM_TRANSPORT_RESULT *Result,UINT32 Mask);
+EFI_STATUS PlatformWinBootCheck(PLATFORM_TEST_OUTPUT Output,VOID *Context);
 typedef struct {
   EFI_STATUS Status;
   UINT32 PartitionBytes, MaxTransfer, Frames, CounterBefore, CounterAfter;

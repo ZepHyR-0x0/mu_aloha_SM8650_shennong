@@ -23,6 +23,7 @@ KernelErrataPatcherExitBootServices(
     IN EFI_HANDLE ImageHandle, IN UINTN MapKey,
     IN EFI_PHYSICAL_ADDRESS fwpKernelSetupPhase1)
 {
+  DEBUG((DEBUG_ERROR,"[WINLOAD] EBS enter caller=%lx key=%lu\n",fwpKernelSetupPhase1,(UINT64)MapKey));
   // Might be called multiple times by winload in a loop failing few times
   gBS->ExitBootServices = mOriginalEfiExitBootServices;
   gBS->Hdr.CRC32        = 0;
@@ -31,7 +32,9 @@ KernelErrataPatcherExitBootServices(
   OslInterceptMain(fwpKernelSetupPhase1);
 
   // Call the original
-  return gBS->ExitBootServices(ImageHandle, MapKey);
+  EFI_STATUS Status=gBS->ExitBootServices(ImageHandle, MapKey);
+  if(EFI_ERROR(Status))DEBUG((DEBUG_ERROR,"[WINLOAD] EBS returned %r\n",Status));
+  return Status;
 }
 
 VOID

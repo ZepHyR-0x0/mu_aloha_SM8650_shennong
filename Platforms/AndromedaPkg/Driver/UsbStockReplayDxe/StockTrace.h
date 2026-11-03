@@ -964,7 +964,7 @@ StockTracePrepare (VOID *Config, EFI_USBFN_IO_PROTOCOL *Fn)
     if (!EFI_ERROR (gBS->CalculateCrc32 (&mTraceRt, mTraceRt.Hdr.HeaderSize, &mTraceRt.Hdr.CRC32)))
       mNativeRtSlot = (VOID *)(FnBase + 0x164E8);
   }
-  StockSay ("[USB b327] speed policy private-rt=%u DEVSPD=0; native cable edges\r\n", mNativeRtSlot != NULL);
+  StockSay ("[USB b327] speed policy private-rt=%u DEVSPD=%u; native cable edges\r\n", mNativeRtSlot != NULL,mRequestedSpeed);
   StockSay ("[USBTRACE b319] ready fn=%u connection=%u charger=%u private-bs-ds=%u\r\n",
     mTraceFn != NULL, mTraceConfig != NULL, mTracePower != NULL, mNativeDsSlot != NULL);
   StockSay ("[USBTRACE b319] context enabled=%u cable=%u core=%u base=%lx/%lx phy=%lx\r\n",

@@ -21,6 +21,8 @@ STATIC EFI_STATUS Number(CONST CHAR16 *Text, UINT32 *Value)
 STATIC VOID Help(VOID)
 {
   Print(L"PlatformTest.efi platform | devices | wireless-scan | bluetooth | sensors | wlan-link\n"
+        L"PlatformTest.efi transports | glink | mhi | gyro | gps (read-only prerequisites)\n"
+        L"PlatformTest.efi bootcheck (ARM64 ACPI/GOP/RNG/memory attributes)\n"
         L"PlatformTest.efi rpmb-info | rpmb-read <address> <frames 1..4>\n"
         L"PlatformTest.efi acpi-read <table-index 0..63> <offset> <bytes 1..4096>\n"
         L"PlatformTest.efi brightness-status | flash-status | flash <channel 0..1> <ms 50..300> <mA 25/50/75/100>\n"
@@ -71,9 +73,17 @@ EFI_STATUS EFIAPI UefiMain (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTabl
   }
   if (Arguments != NULL && Arguments->Argc == 2) {
     CONST CHAR16 *Option = Arguments->Argv[1];
-    if (StrCmp(Option,L"sensors")==0) {
+    if(StrCmp(Option,L"bootcheck")==0)return PlatformWinBootCheck(Output,NULL);
+    if(StrCmp(Option,L"transports")==0 || StrCmp(Option,L"glink")==0 || StrCmp(Option,L"mhi")==0){
+      PLATFORM_TRANSPORT_RESULT Transport;
+      return PlatformTransportTestSelected(Output,NULL,&Transport,StrCmp(Option,L"glink")==0?1:StrCmp(Option,L"mhi")==0?2:3);
+    }
+    if (StrCmp(Option,L"sensors")==0 || StrCmp(Option,L"gyro")==0 || StrCmp(Option,L"gps")==0) {
       PLATFORM_SENSOR_RESULT Sensors;
-      return PlatformSensorTest(Output,NULL,&Sensors);
+      PLATFORM_TRANSPORT_RESULT Transport;
+      Status=PlatformSensorTest(Output,NULL,&Sensors);
+      PlatformTransportTestSelected(Output,NULL,&Transport,1);
+      return Status;
     }
     if (StrCmp(Option,L"devices")==0 || StrCmp(Option,L"wireless-scan")==0 || StrCmp(Option,L"bluetooth")==0) {
       WIRELESS_SURVEY_RESULT *Radio = AllocateZeroPool(sizeof(*Radio));

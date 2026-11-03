@@ -1,6 +1,7 @@
 meta:
   title: Shennong (SM8650) UEFI 打通设备树
-  subtitle: CDC 上传提速 / 完整目录 · ARM64 精简 PE RAM 引导 · RPMB 只读 / ACPI / SMC/TZ
+  subtitle: 1 MiB CDC 窗口 / HS 与 SS 实验 · GLINK/MHI 只读观察 · ARM64 PE / ReadyToBoot /
+    ACTLR
   platform: SM8650 / pineapple
   updated: '2026-11-03'
 groups:
@@ -282,7 +283,8 @@ nodes:
   - usb_refclk
   dt_path: /soc/hsphy@88e3000
   compatible: qcom,usb-snps-eusb2-phy
-  notes: 原厂硬件链初始化后 CDC 和 MSC 在 Windows 枚举并传输；PHY/repeater/PMIC/时钟源保持源码锁。驱动可用范围不代表 USB 主机或 USB3 已完成。
+  notes: 原厂硬件链初始化后 CDC 和 MSC 在 Windows 枚举并传输；PHY/repeater/PMIC/时钟源保持源码锁。驱动可用范围不代表
+    USB 主机或 USB3 已完成。
 - id: usb_ssphy
   name: QMP 超速 PHY
   group: usb
@@ -594,7 +596,8 @@ nodes:
   deps:
   - tz
   - smem
-  notes: 兼容loader可为keymaster返回对象；featenabler签名仍失败。 b319观察metadata/size/address、ELF/PH CRC及槽状态；Cmd6/15/16仍拒绝。
+  notes: 兼容loader可为keymaster返回对象；featenabler签名仍失败。 b319观察metadata/size/address、ELF/PH
+    CRC及槽状态；Cmd6/15/16仍拒绝。
 - id: spss
   name: SPSS 加载器
   group: security
@@ -632,7 +635,8 @@ nodes:
   driver: AdspProbeDxe / FAT
   deps:
   - ufs
-  notes: 最新log-stock第307..314在modem_a\image读取adsp.mdt和adsp_dtb.mdt，51+1所需payload大小正确。 extract/shennnong_dsp.img是ext4共享库分区；b320只在电脑解包/哈希，不能用共享库代替主固件启动。
+  notes: 最新log-stock第307..314在modem_a\image读取adsp.mdt和adsp_dtb.mdt，51+1所需payload大小正确。
+    extract/shennnong_dsp.img是ext4共享库分区；b320只在电脑解包/哈希，不能用共享库代替主固件启动。
 - id: i2c_audio
   name: I2C (WCD939x SE)
   group: audio
@@ -658,7 +662,8 @@ nodes:
     ref: AndromedaPkg/Driver/UsbStockReplayDxe/StockTrace.h
     enabled: true
     note: native9160成功返回后恢复路由；FALSE不再次reset，保护I²C页选择与其他位。
-  notes: b326 wrapper在native初始化后恢复WCD，并出现枚举成功；before/restored没有完整留在拼接日志。 保留I2C页/位保护；不能宣称native reset必然破坏WCD，音频也未因此启动。
+  notes: b326 wrapper在native初始化后恢复WCD，并出现枚举成功；before/restored没有完整留在拼接日志。 保留I2C页/位保护；不能宣称native
+    reset必然破坏WCD，音频也未因此启动。
 - id: audio_out
   name: UEFI 音频输出栈
   group: audio
@@ -688,7 +693,7 @@ nodes:
   driver: WirelessSurveyDxe / WiFi2 survey
   deps:
   - pcie
-  notes: TEST 和 CDC 提供列表与 provider 状态；WiFi providers=0，真实 AP 扫描尚不可用。
+  notes: WCN7850 17cb:1107 实机识别成功；电源、时钟、PHY、PCIe 链路与资源恢复通过；MHI/QMI/AP 扫描/流量仍缺失。
 - id: nfc
   name: NFC SN-NCI
   group: connectivity
@@ -738,7 +743,8 @@ nodes:
   deps:
   - disp_console
   - buttons
-  notes: b327实际FD含81F00000/256KiB reserved日志区，生产writer/reader wrap及canary通过。 文本容量262120字节+24字节头；避开81D00000..81F00000 SMEM。手机新容量待实机。
+  notes: b327实际FD含81F00000/256KiB reserved日志区，生产writer/reader wrap及canary通过。 文本容量262120字节+24字节头；避开81D00000..81F00000
+    SMEM。手机新容量待实机。
   base: '0x81F00000'
   size: '0x40000'
 - id: usb_ep0_queue
@@ -748,7 +754,8 @@ nodes:
   deps:
   - usb_smmu
   - usb_noc
-  notes: 原厂 EP0 负责枚举；配置后重复 GET_DESCRIPTOR 在已有 EP0 ownership 下由上层接管，避免重复状态响应。CDC 与 MSC 配置、类控制和回切已通过。
+  notes: 原厂 EP0 负责枚举；配置后重复 GET_DESCRIPTOR 在已有 EP0 ownership 下由上层接管，避免重复状态响应。CDC 与
+    MSC 配置、类控制和回切已通过。
 - id: usb_event_dma
   name: USB 原厂事件 / 批量 DMA
   group: usb
@@ -756,7 +763,8 @@ nodes:
   deps:
   - usb_smmu
   - usb_noc
-  notes: 当前候选 CDC 多窗口文件上传、CRC 回读、MSC 主机文件 SHA256 与回切通过。DMA 始终经原厂缓冲分配和提交；停止后确认 halt 才释放，失败保留缓冲。
+  notes: 当前候选 CDC 多窗口文件上传、CRC 回读、MSC 主机文件 SHA256 与回切通过。DMA 始终经原厂缓冲分配和提交；停止后确认 halt
+    才释放，失败保留缓冲。
 - id: pmic_adc
   name: PMIC ADC电池遥测
   group: power
@@ -806,7 +814,8 @@ nodes:
   deps:
   - adsp_fw_files
   driver: AdspProbeDxe / AdspMdtInspect
-  notes: 最新UEFI日志主ADSP 55PHDR/53load/2BSS/51payload/bad0；DTB 3PHDR/1load/1payload/bad0。 结构可达已实测；认证/启动和远端服务未证明。
+  notes: 最新UEFI日志主ADSP 55PHDR/53load/2BSS/51payload/bad0；DTB 3PHDR/1load/1payload/bad0。
+    结构可达已实测；认证/启动和远端服务未证明。
 - id: adsp_pil
   name: ADSP PIL协议发布
   group: audio
@@ -825,7 +834,8 @@ nodes:
   deps:
   - usb_dwc3
   driver: FrontPage / USB_BRINGUP revision2
-  notes: stock FS TEST仍不支持；b319以USB TEST和持久停点验证。 不能把Unsupported视为成功执行FS枚举测试。
+  notes: revision 9；默认 HS，TEST/CDC 可选易失 SS，未配置 15 秒回 HS。SS 请求/回 HS 成功，实机 negotiated
+    EFI=3、packet=512，未建立 SS 链路。
 - id: usb_manual_tpl
   name: USB 应用事件 pump / TPL
   group: usb
@@ -838,7 +848,8 @@ nodes:
     enabled: true
     ref: b214
     note: b214实测TPL断言已消失；真实C嵌套锁/延后timer通过，旧16负对照失败；未解决枚举。
-  notes: USB pump 在 TPL_APPLICATION 调用原厂 HandleEvent，退出 pump 后执行切换与恢复；重入被拒绝。MSC 事务等待与真实 CDC 拔插恢复已验证。
+  notes: USB pump 在 TPL_APPLICATION 调用原厂 HandleEvent，退出 pump 后执行切换与恢复；重入被拒绝。MSC 事务等待与真实
+    CDC 拔插恢复已验证。
 - id: usb_init_event
   name: BDS USB初始化事件
   group: usb
@@ -863,7 +874,8 @@ nodes:
     ref: UsbDeviceDxe
     enabled: true
     note: 保留原厂标准请求状态机；自研b215实现未作为stock owner编入。
-  notes: b326原始日志已保留GET_DESCRIPTOR、SET_ADDRESS(2A/2B)、GET_STATUS和SET_CONFIGURATION(1)。 标准控制请求/枚举已实机打通，保留native owner；不表示完整fastboot或其他类协议。
+  notes: b326原始日志已保留GET_DESCRIPTOR、SET_ADDRESS(2A/2B)、GET_STATUS和SET_CONFIGURATION(1)。
+    标准控制请求/枚举已实机打通，保留native owner；不表示完整fastboot或其他类协议。
 - id: platform_info_abi
   name: PlatformInfo公共ABI与板型查询
   group: core
@@ -894,7 +906,8 @@ nodes:
   deps:
   - dxe_core
   driver: USB最终镜像/FV模块校验
-  notes: 当前镜像 SHA256 bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d；原厂 USB、PMIC、SPMI、UFS 二进制与 FV 来源检查通过，两树 30 个源码锁文件一致。
+  notes: 当前镜像 SHA256 bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d；原厂
+    USB、PMIC、SPMI、UFS 二进制与 FV 来源检查通过，两树 30 个源码锁文件一致。
 - id: usb_device_dispatch
   name: UsbDevice 原厂协议与派发
   group: usb
@@ -903,7 +916,8 @@ nodes:
   - pmic_arb
   - smem
   driver: UsbDevice依赖/派发/入口诊断
-  notes: 原厂 UsbDeviceDxe 驻留与协议发布已核对；StartEx、HandleEvent、Stop 由上层在 TPL_APPLICATION 调用，当前候选 CDC/MSC 枚举和切换实机通过。
+  notes: 原厂 UsbDeviceDxe 驻留与协议发布已核对；StartEx、HandleEvent、Stop 由上层在 TPL_APPLICATION
+    调用，当前候选 CDC/MSC 枚举和切换实机通过。
 - id: usb_stock_replay
   name: 原厂USB DXE客户端
   group: usb
@@ -912,7 +926,8 @@ nodes:
   - usb_dwc3
   - timer
   driver: UsbStockReplayDxe / native client / MSC / CDC / RAM
-  notes: b329 UsbStockReplayDxe沿用原厂Send/HandleEvent身份；仅扩大CDC TX分块容量。 实际主机吞吐仍待实机；native DMA与队列顺序未改。
+  notes: b329 UsbStockReplayDxe沿用原厂Send/HandleEvent身份；仅扩大CDC TX分块容量。 实际主机吞吐仍待实机；native
+    DMA与队列顺序未改。
   soft_deps:
   - usb_smmu
   - usb_stream_handoff
@@ -950,7 +965,8 @@ nodes:
   - readonly_storage
   - disp_console
   - touch_navigation
-  notes: 用户确认 b318 文件浏览正常；b319 接受新版保护协议 Revision2。 公共卷继续只读，RAW/ext4/F2FS/加密卷不提供 FAT 文件浏览。
+  notes: 用户确认 b318 文件浏览正常；b319 接受新版保护协议 Revision2。 公共卷继续只读，RAW/ext4/F2FS/加密卷不提供 FAT
+    文件浏览。
 - id: touch_navigation
   name: 单击选择 / 双击确认
   group: input
@@ -958,7 +974,8 @@ nodes:
   deps:
   - touch
   - disp_console
-  notes: b329 BootMenu主界面仅GUI/Android/Recovery/UEFI Shell/更多，其余启动项进入“更多”并可返回；拖拽改为Top驱动，Selected始终夹在可见范围内；按键增加PageUp/PageDown翻页。 Android/Recovery优先选择已有命名匹配的Boot####；未从raw分区读取boot_a/boot_b。图标alpha与文本StringInfo改为每菜单缓存不再每帧分配。
+  notes: b329 BootMenu主界面仅GUI/Android/Recovery/UEFI Shell/更多，其余启动项进入“更多”并可返回；拖拽改为Top驱动，Selected始终夹在可见范围内；按键增加PageUp/PageDown翻页。
+    Android/Recovery优先选择已有命名匹配的Boot####；未从raw分区读取boot_a/boot_b。图标alpha与文本StringInfo改为每菜单缓存不再每帧分配。
 - id: osk
   name: 手机式触控键盘
   group: input
@@ -982,7 +999,8 @@ nodes:
   deps:
   - logfs_partition
   - ram_log
-  notes: 此前两槽跨重启读回已实测；b327新256KiB payload/512KiB文件界限、CRC/旋转/只读快照测试通过。 QR Log显示RAM日志，Refresh Log明确保存至logfs；LOGREAD保留。电脑slot decoder严格校验64K/256K两格式。新镜像持久回传待实机。
+  notes: 此前两槽跨重启读回已实测；b327新256KiB payload/512KiB文件界限、CRC/旋转/只读快照测试通过。 QR Log显示RAM日志，Refresh
+    Log明确保存至logfs；LOGREAD保留。电脑slot decoder严格校验64K/256K两格式。新镜像持久回传待实机。
   soft_deps:
   - virtual_rtc
 - id: shell_layout
@@ -992,7 +1010,8 @@ nodes:
   deps:
   - disp_console
   - osk
-  notes: 4倍字体，单元24x48；左右96px、顶底160px；QueryMode与实际cursor/清屏一致。 1440x3200为52x59；GUI可返回Boot Menu，Shell OSK满宽底部。实机布局待测。
+  notes: 4倍字体，单元24x48；左右96px、顶底160px；QueryMode与实际cursor/清屏一致。 1440x3200为52x59；GUI可返回Boot
+    Menu，Shell OSK满宽底部。实机布局待测。
 - id: chargerex_getters
   name: ChargerEx 电源只读快照
   group: power
@@ -1003,7 +1022,8 @@ nodes:
   soft_deps:
   - pmic_glink
   - charger_backend
-  notes: b323 gate1；battery-present Success，source-connected先1后0。 voltage getter Success返回3500，但ADC Unsupported，保留来源未核实标记。
+  notes: b323 gate1；battery-present Success，source-connected先1后0。 voltage getter Success返回3500，但ADC
+    Unsupported，保留来源未核实标记。
 - id: power_status
   name: GUI Power / Status
   group: power
@@ -1091,7 +1111,8 @@ nodes:
     ref: AndromedaPkg/Driver/ProjectInfoCacheDxe
     enabled: true
     note: b323缓存通知先于原厂ProjectInfo/ADC安装；原厂getter优先、严格SMEM135回退。
-  notes: b323 retained SMEM135 chip557 valid1；包装安装，原厂Device Error回退verified ABL cache成功。 板号回退不等于ADC测量恢复；247 OEM行/16 shennong行范围保护保留。
+  notes: b323 retained SMEM135 chip557 valid1；包装安装，原厂Device Error回退verified ABL cache成功。
+    板号回退不等于ADC测量恢复；247 OEM行/16 shennong行范围保护保留。
 - id: usb_stream_handoff
   name: USB SID40 原厂上下文接管
   group: usb
@@ -1117,7 +1138,8 @@ nodes:
     ref: AndromedaPkg/Driver/UsbStockReplayDxe/StockTrace.h
     enabled: true
     note: 移除pre-set/re-pin/手工CoreInit/提前RunStop；原厂62AC→60D0/37EC/4A64接管连接状态。
-  notes: 多次真实 CDC 拔插自动恢复，含日志接收中断；线缆下降沿取消会话，200 ms 后在 pump 外执行原厂 Stop/StartEx。原文件 CRC 与再次切换通过，锁释放已核对；大文件替换上传中断尚未捕获。当前 USB 上层及 stock 硬件链按源码锁固定。
+  notes: 多次真实 CDC 拔插自动恢复，含日志接收中断；线缆下降沿取消会话，200 ms 后在 pump 外执行原厂 Stop/StartEx。原文件 CRC
+    与再次切换通过，锁释放已核对；大文件替换上传中断尚未捕获。当前 USB 上层及 stock 硬件链按源码锁固定。
 - id: usb_phy_clock
   name: USB 原厂PIPE/UTMI时钟分支
   group: usb
@@ -1166,7 +1188,8 @@ nodes:
   deps:
   - usb_stock_replay
   - readonly_storage
-  notes: 64 / 128 MiB 实机精确分配，0 / 512 / 1024 / 66048 字节上传 CRC 通过；中断替换保留原文件。CDC 与本地只读文件系统共用一个 backing，MSC 使用同一内存。8192 MiB 仅几何/边界验证，实机大容量受可用内存限制。
+  notes: 64..8192 MiB 上限；本轮 64/512 MiB 分配使用 EfiReservedMemoryType，所有权标记后追加标准 RAM disk
+    路径。CDC/MSC/local 共用一个 backing，本地只读；8 GiB 实机分配未验收。
 - id: log_refresh
   name: QR Log / Refresh Log（待实机）
   group: storage
@@ -1181,8 +1204,9 @@ nodes:
   deps:
   - ram_disk
   - usb_cdc
-  notes: 客户端按已知长度读取每个 64 KiB 窗口的 ACK，避免等待 64 KiB 接收缓冲填满；普通命令和长正文沿用原接收路径。相同固件交替上传 4 MiB，旧客户端约 0.49 MiB/s，新客户端约 0.68 MiB/s，提升 40%，CRC 与完整日志帧通过。344.1
-    MiB WIM 实测 256.4 秒，平均 1.34 MiB/s，CRC 回读通过。页面上传期间使用最多 16 次 / 4 ms 的应用事件服务，并在页面等待中每 1 ms 服务；上传结束或取消后恢复正常等待。USB 驱动二进制与 30 项源码锁保持不变。
+  notes: 4 MiB 交替实测：64 KiB ACK 0.67–0.68 MiB/s，1 MiB ACK 1.78 MiB/s，四次 CRC 一致；单次 native
+    DMA 最大64 KiB。 本轮 344.1 MiB WIM 上传 186.2 秒（1.85 MiB/s），CRC 回读通过。 CRC/断线替换和 8 GiB
+    几何离线检查通过。
   driver: UsbRamTransfer / RamFileCore
 - id: efi_remote_boot
   name: CDC 启动映射 EFI 文件
@@ -1190,14 +1214,16 @@ nodes:
   deps:
   - dxe_core
   - usb_cdc
-  notes: 3072 字节 ARM64 EFI 的易失执行标记与返回通过；efi-shell-start/return 保存成功，冷重启后旧快照 154821 字节、CRC 通过。当前候选 PE 完整目录、WIM CRC 和四个启动文件列表通过；PE 后重启回 Android，日志 seq=100、156133 字节，最后保存点为进入 Shell 前的 efi-shell-start，没有对应返回或具体错误码。
+  notes: ReadyToBoot 一次触发及 Windows 拦截器日志通过；NSH 和 3072 字节 EFI 执行/返回通过。修正 PE SizeOfImage、限制查找/修补边界并同步缓存；ACTLR_EL1
+    在本机 EL1 可读，禁用继承的 ACTLR 删除补丁。
   driver: UsbRemoteCommands / FrontPage RemoteControl
 - id: acpi_runtime
   name: ACPI 表 / 关联 / 分段导出
   group: core
   deps:
   - dxe_core
-  notes: 实机导出 15 张表，适用 checksum 与 FADT/DSDT/FACS 关联通过，MADT 8 CPU；DSDT OEM 仍含 SDM8550，WinPE 适配未完成。
+  notes: 发布候选实机15张表适用checksum通过；8个80字节GICC和独立GICR，GTDT 29/30/27/26、Always On；FADT
+    reduced/PSCI/SMC、GOP与RNG可见，MemoryAttribute provider缺失。
   driver: PlatformTestLib / ACPI SDT
 - id: smc_capabilities
   name: SMC PAS 可用性查询
@@ -1254,7 +1280,7 @@ nodes:
   deps:
   - scm
   - glink
-  notes: 可查询平台/固件依赖；没有定位 fix 或 NMEA 数据证据。
+  notes: MODEM GLINK 描述符与16 KiB TX可读，RX未建立；没有GNSS fix/NMEA证据。
   driver: PlatformTestLib / modem dependencies
 - id: gyro_samples
   name: 陀螺仪 / 加速度采样
@@ -1262,7 +1288,7 @@ nodes:
   deps:
   - lpass
   - glink
-  notes: ADSP MDT 与配置文件只读可达；ADSP/Sensor 服务及实时采样尚未完成。
+  notes: ADSP MDT/配置可读，GLINK描述符与16 KiB TX可读，RX未建立；没有SSC实时采样。
   driver: PlatformTestLib / ADSP dependencies
 - id: winpe_ram_boot
   name: ARM64 精简 PE / RAM 引导
@@ -1272,4 +1298,22 @@ nodes:
   - efi_remote_boot
   - acpi_runtime
   driver: ARM64 ADK boot manager / winload.efi
-  notes: ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。当前候选重试：完整目录上传、WIM CRC 与四个启动文件列表检查通过；启动后回到 Android，旧日志最后保存点为 efi-shell-start（进入 Shell 前），没有对应返回记录。PE 启动失败，重启原因待定位。重启后读回 seq=100、156133 字节快照，CRC 通过。
+  notes: 本轮完整目录上传、WIM CRC 和四个启动文件列表通过；执行启动后用户观察到鼠标保留、GUI 背景黑屏，随后重启，主机枚举为 Android ADB。PE
+    启动失败，具体重启原因未确定。 重启后读回171750字节旧快照，ReadyToBoot与watchdog关闭可见，最后保存点为efi-shell-start，尚无EBS/内核错误记录。
+- id: glink_transport
+  name: GLINK 分段只读观察
+  group: core
+  deps:
+  - smem
+  - ipcc
+  - glink
+  driver: PlatformTransports / SmemReadCore
+  notes: AP/ADSP、MODEM、CDSP私有分区只读对齐复制；三个descriptor和TX可读，RX未分配，不写FIFO或ACK。
+- id: win_bootcheck
+  name: Windows ARM64 启动检查
+  group: core
+  deps:
+  - acpi_runtime
+  - efi_remote_boot
+  driver: WinBootReadiness / CDC test bootcheck
+  notes: ACPI表、GICC/GICR、GTDT、GOP、RNG及ACTLR只读检查可见；不等于Windows兼容性验收。

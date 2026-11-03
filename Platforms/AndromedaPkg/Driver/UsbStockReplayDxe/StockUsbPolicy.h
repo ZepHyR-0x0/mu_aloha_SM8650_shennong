@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 // Native Usbfn 3BAC reads one DWC DEVSPD byte, not EFI_USB_BUS_SPEED.
+STATIC UINT32 mRequestedSpeed=USB_SPEED_HIGH, mNegotiatedSpeed, mNegotiatedPacket;
+STATIC UINT64 mSpeedFallbackAt;
 STATIC EFI_GUID mStockSpeedGuid = {
   0x882F8C2B, 0x9646, 0x435F, {0x8D,0xE5,0xF2,0x08,0xFF,0x80,0xC1,0xBD}
 };
@@ -17,7 +19,7 @@ StockUsbGetVariable (CHAR16 *Name, EFI_GUID *Guid, UINT32 *Attributes,
   if (*Size < 1) { *Size = 1; return EFI_BUFFER_TOO_SMALL; }
   if (Data == NULL) return EFI_INVALID_PARAMETER;
   *Size = 1;
-  *(UINT8 *)Data = 0; // DWC HighSpeed; EFI UsbBusSpeedHigh is 3.
+  *(UINT8 *)Data = (UINT8)mRequestedSpeed; // HS=0, SS=4, never EFI enums.
   return EFI_SUCCESS;
 }
 

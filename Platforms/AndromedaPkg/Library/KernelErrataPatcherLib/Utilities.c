@@ -14,36 +14,39 @@
 
 **/
 #include "KernelErrataPatcherLib.h"
+#include "WinloadImageCore.h"
 
 #define IMAGE_DOS_SIGNATURE 0x5A4D
 #define IMAGE_NT_SIGNATURE 0x00004550
+STATIC BOOLEAN WiRamRange(EFI_PHYSICAL_ADDRESS Base,UINTN Bytes)
+{
+  if(Base>MAX_UINT64-Bytes)return FALSE;
+  EFI_PHYSICAL_ADDRESS End=Base+Bytes,At=Base;
+  while(At<End){
+    EFI_GCD_MEMORY_SPACE_DESCRIPTOR M;
+    if(EFI_ERROR(gDS->GetMemorySpaceDescriptor(At,&M)) || M.GcdMemoryType!=EfiGcdMemoryTypeSystemMemory ||
+       M.BaseAddress>At || M.BaseAddress>MAX_UINT64-M.Length || M.BaseAddress+M.Length<=At)return FALSE;
+    At=MIN(End,M.BaseAddress+M.Length);
+  }
+  return TRUE;
+}
 
 EFI_PHYSICAL_ADDRESS LocateWinloadBase(EFI_PHYSICAL_ADDRESS base, UINTN *size)
 {
-  if (base & (EFI_PAGE_SIZE - 1)) {
-    base &= ~(EFI_PAGE_SIZE - 1);
-    base += EFI_PAGE_SIZE;
+  EFI_PHYSICAL_ADDRESS Pc=base;
+  if(size==NULL)return 0;*size=0;base&=~(EFI_PHYSICAL_ADDRESS)(EFI_PAGE_SIZE-1);
+  // No allocations or memory-map acquisition in the EBS interceptor. Never
+  // scan outside a GCD RAM descriptor or wrap through physical address zero.
+  for(UINTN Pages=0;Pages<8192;Pages++){
+    UINT32 ImageBytes;
+    if(!WiRamRange(base,EFI_PAGE_SIZE))break;
+    if(WiInspect((CONST UINT8 *)(UINTN)base,EFI_PAGE_SIZE,base,Pc,&ImageBytes) &&
+       WiRamRange(base,ImageBytes)){*size=ImageBytes;return base;}
+    if(base<EFI_PAGE_SIZE)break;
+    base-=EFI_PAGE_SIZE;
   }
-
-  do {
-    if (*(UINT16 *)base == IMAGE_DOS_SIGNATURE) {
-      UINT32               newBaseOffset = *(UINT32 *)(base + 0x3C);
-      EFI_PHYSICAL_ADDRESS newBase       = base + newBaseOffset;
-
-      if (*(UINT16 *)newBase == IMAGE_NT_SIGNATURE) {
-        *size = *(UINT32 *)(newBase + 0x110);
-        if (*size & (EFI_PAGE_SIZE - 1)) {
-          *size &= ~(EFI_PAGE_SIZE - 1);
-          *size += EFI_PAGE_SIZE;
-        }
-        break;
-      }
-    }
-
-    base -= EFI_PAGE_SIZE;
-  } while (TRUE);
-
-  return base;
+  FirmwarePrint("[WINLOAD] bounded ARM64 image lookup failed pc=%lx\n",Pc);
+  return 0;
 }
 
 VOID CopyMemory(

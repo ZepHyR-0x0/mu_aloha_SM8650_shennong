@@ -1,6 +1,6 @@
 {
   "title": "Shennong (SM8650) UEFI 打通设备树",
-  "subtitle": "CDC 上传提速 / 完整目录 · ARM64 精简 PE RAM 引导 · RPMB 只读 / ACPI / SMC/TZ",
+  "subtitle": "1 MiB CDC 窗口 / HS 与 SS 实验 · GLINK/MHI 只读观察 · ARM64 PE / ReadyToBoot / ACTLR",
   "updated": "2026-11-03",
   "statuses": {
     "ok": {
@@ -294,7 +294,8 @@
         "lpass",
         "usb_device_dispatch",
         "project_info",
-        "project_info_cache"
+        "project_info_cache",
+        "glink_transport"
       ],
       "blockers": [],
       "direct_blockers": [],
@@ -345,7 +346,8 @@
         "glink",
         "rpmh",
         "usb_config",
-        "pmic_glink"
+        "pmic_glink",
+        "glink_transport"
       ],
       "blockers": [],
       "direct_blockers": [],
@@ -397,7 +399,8 @@
         "pmic_glink",
         "bluetooth_scan",
         "gps_fix",
-        "gyro_samples"
+        "gyro_samples",
+        "glink_transport"
       ],
       "blockers": [],
       "direct_blockers": [],
@@ -809,7 +812,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 292,
+      "y": 410,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -907,7 +910,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 646,
+      "y": 764,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -956,7 +959,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 410,
+      "y": 528,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -1239,7 +1242,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 764,
+      "y": 882,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -1293,7 +1296,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 1118,
+      "y": 1236,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -1625,7 +1628,7 @@
       "no_overlap": false,
       "layer": 14,
       "x": 5936,
-      "y": 528,
+      "y": 764,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -1693,7 +1696,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 882,
+      "y": 1000,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -2827,7 +2830,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 174,
+      "y": 292,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -3121,7 +3124,7 @@
       "no_overlap": false,
       "layer": 14,
       "x": 5936,
-      "y": 646,
+      "y": 1000,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -3184,7 +3187,7 @@
       "no_overlap": false,
       "layer": 8,
       "x": 3584,
-      "y": 823,
+      "y": 941,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -3226,8 +3229,8 @@
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "TEST 和 CDC 提供列表与 provider 状态；WiFi providers=0，真实 AP 扫描尚不可用。",
-      "evidence": "TEST 和 CDC 提供列表与 provider 状态；WiFi providers=0，真实 AP 扫描尚不可用。",
+      "notes": "WCN7850 17cb:1107 实机识别成功；电源、时钟、PHY、PCIe 链路与资源恢复通过；MHI/QMI/AP 扫描/流量仍缺失。",
+      "evidence": "WCN7850 17cb:1107 实机识别成功；电源、时钟、PHY、PCIe 链路与资源恢复通过；MHI/QMI/AP 扫描/流量仍缺失。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -3235,7 +3238,7 @@
       "no_overlap": false,
       "layer": 9,
       "x": 3976,
-      "y": 764,
+      "y": 882,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -3341,7 +3344,7 @@
       "no_overlap": false,
       "layer": 8,
       "x": 3584,
-      "y": 941,
+      "y": 823,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -3724,8 +3727,8 @@
       "patch": {},
       "no_overlap": false,
       "layer": 6,
-      "x": 2408,
-      "y": 1354,
+      "x": 2800,
+      "y": 587,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -3924,7 +3927,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 1236,
+      "y": 1354,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -4071,10 +4074,10 @@
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "stock FS TEST仍不支持；b319以USB TEST和持久停点验证。 不能把Unsupported视为成功执行FS枚举测试。",
-      "evidence": "stock FS TEST仍不支持；b319以USB TEST和持久停点验证。",
+      "notes": "revision 9；默认 HS，TEST/CDC 可选易失 SS，未配置 15 秒回 HS。SS 请求/回 HS 成功，实机 negotiated EFI=3、packet=512，未建立 SS 链路。",
+      "evidence": "revision 9；默认 HS，TEST/CDC 可选易失 SS，未配置 15 秒回 HS。SS 请求/回 HS 成功，实机 negotiated EFI=3、packet=512，未建立 SS 链路。",
       "state_note": "不能把Unsupported视为成功执行FS枚举测试。",
-      "updated": "2026-10-31",
+      "updated": "2026-11-03",
       "tags": [],
       "patch": {},
       "no_overlap": false,
@@ -4770,7 +4773,7 @@
       "no_overlap": false,
       "layer": 13,
       "x": 5544,
-      "y": 941,
+      "y": 705,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -5022,7 +5025,7 @@
       "no_overlap": false,
       "layer": 13,
       "x": 5544,
-      "y": 1059,
+      "y": 823,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -5151,7 +5154,7 @@
       "no_overlap": false,
       "layer": 15,
       "x": 6328,
-      "y": 646,
+      "y": 823,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -5278,7 +5281,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 528,
+      "y": 646,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -5395,7 +5398,7 @@
       "no_overlap": false,
       "layer": 13,
       "x": 5544,
-      "y": 705,
+      "y": 1059,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -5459,7 +5462,7 @@
       "no_overlap": false,
       "layer": 13,
       "x": 5544,
-      "y": 823,
+      "y": 1177,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -5741,7 +5744,7 @@
       "no_overlap": false,
       "layer": 9,
       "x": 3976,
-      "y": 882,
+      "y": 764,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -6044,7 +6047,7 @@
       "no_overlap": false,
       "layer": 13,
       "x": 5544,
-      "y": 1177,
+      "y": 941,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -6107,8 +6110,8 @@
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "64 / 128 MiB 实机精确分配，0 / 512 / 1024 / 66048 字节上传 CRC 通过；中断替换保留原文件。CDC 与本地只读文件系统共用一个 backing，MSC 使用同一内存。8192 MiB 仅几何/边界验证，实机大容量受可用内存限制。",
-      "evidence": "64 / 128 MiB 实机精确分配，0 / 512 / 1024 / 66048 字节上传 CRC 通过；中断替换保留原文件。CDC 与本地只读文件系统共用一个 backing，MSC 使用同一内存。8192 MiB 仅几何/边界验证，实机大容量受可用内存限制。",
+      "notes": "64..8192 MiB 上限；本轮 64/512 MiB 分配使用 EfiReservedMemoryType，所有权标记后追加标准 RAM disk 路径。CDC/MSC/local 共用一个 backing，本地只读；8 GiB 实机分配未验收。",
+      "evidence": "64..8192 MiB 上限；本轮 64/512 MiB 分配使用 EfiReservedMemoryType，所有权标记后追加标准 RAM disk 路径。CDC/MSC/local 共用一个 backing，本地只读；8 GiB 实机分配未验收。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -6180,7 +6183,7 @@
       "no_overlap": false,
       "layer": 14,
       "x": 5936,
-      "y": 764,
+      "y": 528,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -6241,8 +6244,8 @@
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "客户端按已知长度读取每个 64 KiB 窗口的 ACK，避免等待 64 KiB 接收缓冲填满；普通命令和长正文沿用原接收路径。相同固件交替上传 4 MiB，旧客户端约 0.49 MiB/s，新客户端约 0.68 MiB/s，提升 40%，CRC 与完整日志帧通过。344.1 MiB WIM 实测 256.4 秒，平均 1.34 MiB/s，CRC 回读通过。页面上传期间使用最多 16 次 / 4 ms 的应用事件服务，并在页面等待中每 1 ms 服务；上传结束或取消后恢复正常等待。USB 驱动二进制与 30 项源码锁保持不变。",
-      "evidence": "客户端按已知长度读取每个 64 KiB 窗口的 ACK，避免等待 64 KiB 接收缓冲填满；普通命令和长正文沿用原接收路径。相同固件交替上传 4 MiB，旧客户端约 0.49 MiB/s，新客户端约 0.68 MiB/s，提升 40%，CRC 与完整日志帧通过。344.1 MiB WIM 实测 256.4 秒，平均 1.34 MiB/s，CRC 回读通过。页面上传期间使用最多 16 次 / 4 ms 的应用事件服务，并在页面等待中每 1 ms 服务；上传结束或取消后恢复正常等待。USB 驱动二进制与 30 项源码锁保持不变。",
+      "notes": "4 MiB 交替实测：64 KiB ACK 0.67–0.68 MiB/s，1 MiB ACK 1.78 MiB/s，四次 CRC 一致；单次 native DMA 最大64 KiB。 本轮 344.1 MiB WIM 上传 186.2 秒（1.85 MiB/s），CRC 回读通过。 CRC/断线替换和 8 GiB 几何离线检查通过。",
+      "evidence": "4 MiB 交替实测：64 KiB ACK 0.67–0.68 MiB/s，1 MiB ACK 1.78 MiB/s，四次 CRC 一致；单次 native DMA 最大64 KiB。 本轮 344.1 MiB WIM 上传 186.2 秒（1.85 MiB/s），CRC 回读通过。 CRC/断线替换和 8 GiB 几何离线检查通过。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -6250,7 +6253,7 @@
       "no_overlap": false,
       "layer": 14,
       "x": 5936,
-      "y": 1000,
+      "y": 646,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -6310,14 +6313,15 @@
       ],
       "soft_deps": [],
       "dependents": [
-        "winpe_ram_boot"
+        "winpe_ram_boot",
+        "win_bootcheck"
       ],
       "blockers": [],
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "3072 字节 ARM64 EFI 的易失执行标记与返回通过；efi-shell-start/return 保存成功，冷重启后旧快照 154821 字节、CRC 通过。当前候选 PE 完整目录、WIM CRC 和四个启动文件列表通过；PE 后重启回 Android，日志 seq=100、156133 字节，最后保存点为进入 Shell 前的 efi-shell-start，没有对应返回或具体错误码。",
-      "evidence": "3072 字节 ARM64 EFI 的易失执行标记与返回通过；efi-shell-start/return 保存成功，冷重启后旧快照 154821 字节、CRC 通过。当前候选 PE 完整目录、WIM CRC 和四个启动文件列表通过；PE 后重启回 Android，日志 seq=100、156133 字节，最后保存点为进入 Shell 前的 efi-shell-start，没有对应返回或具体错误码。",
+      "notes": "ReadyToBoot 一次触发及 Windows 拦截器日志通过；NSH 和 3072 字节 EFI 执行/返回通过。修正 PE SizeOfImage、限制查找/修补边界并同步缓存；ACTLR_EL1 在本机 EL1 可读，禁用继承的 ACTLR 删除补丁。",
+      "evidence": "ReadyToBoot 一次触发及 Windows 拦截器日志通过；NSH 和 3072 字节 EFI 执行/返回通过。修正 PE SizeOfImage、限制查找/修补边界并同步缓存；ACTLR_EL1 在本机 EL1 可读，禁用继承的 ACTLR 删除补丁。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -6382,14 +6386,15 @@
       ],
       "soft_deps": [],
       "dependents": [
-        "winpe_ram_boot"
+        "winpe_ram_boot",
+        "win_bootcheck"
       ],
       "blockers": [],
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "实机导出 15 张表，适用 checksum 与 FADT/DSDT/FACS 关联通过，MADT 8 CPU；DSDT OEM 仍含 SDM8550，WinPE 适配未完成。",
-      "evidence": "实机导出 15 张表，适用 checksum 与 FADT/DSDT/FACS 关联通过，MADT 8 CPU；DSDT OEM 仍含 SDM8550，WinPE 适配未完成。",
+      "notes": "发布候选实机15张表适用checksum通过；8个80字节GICC和独立GICR，GTDT 29/30/27/26、Always On；FADT reduced/PSCI/SMC、GOP与RNG可见，MemoryAttribute provider缺失。",
+      "evidence": "发布候选实机15张表适用checksum通过；8个80字节GICC和独立GICR，GTDT 29/30/27/26、Always On；FADT reduced/PSCI/SMC、GOP与RNG可见，MemoryAttribute provider缺失。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -6586,7 +6591,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2800,
-      "y": 764,
+      "y": 823,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -6634,7 +6639,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2800,
-      "y": 646,
+      "y": 705,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -6778,8 +6783,8 @@
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "可查询平台/固件依赖；没有定位 fix 或 NMEA 数据证据。",
-      "evidence": "可查询平台/固件依赖；没有定位 fix 或 NMEA 数据证据。",
+      "notes": "MODEM GLINK 描述符与16 KiB TX可读，RX未建立；没有GNSS fix/NMEA证据。",
+      "evidence": "MODEM GLINK 描述符与16 KiB TX可读，RX未建立；没有GNSS fix/NMEA证据。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -6787,7 +6792,7 @@
       "no_overlap": false,
       "layer": 6,
       "x": 2408,
-      "y": 1000,
+      "y": 1118,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -6829,8 +6834,8 @@
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "ADSP MDT 与配置文件只读可达；ADSP/Sensor 服务及实时采样尚未完成。",
-      "evidence": "ADSP MDT 与配置文件只读可达；ADSP/Sensor 服务及实时采样尚未完成。",
+      "notes": "ADSP MDT/配置可读，GLINK描述符与16 KiB TX可读，RX未建立；没有SSC实时采样。",
+      "evidence": "ADSP MDT/配置可读，GLINK描述符与16 KiB TX可读，RX未建立；没有SSC实时采样。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -6885,8 +6890,8 @@
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。当前候选重试：完整目录上传、WIM CRC 与四个启动文件列表检查通过；启动后回到 Android，旧日志最后保存点为 efi-shell-start（进入 Shell 前），没有对应返回记录。PE 启动失败，重启原因待定位。重启后读回 seq=100、156133 字节快照，CRC 通过。",
-      "evidence": "ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。当前候选重试：完整目录上传、WIM CRC 与四个启动文件列表检查通过；启动后回到 Android，旧日志最后保存点为 efi-shell-start（进入 Shell 前），没有对应返回记录。PE 启动失败，重启原因待定位。重启后读回 seq=100、156133 字节快照，CRC 通过。",
+      "notes": "本轮完整目录上传、WIM CRC 和四个启动文件列表通过；执行启动后用户观察到鼠标保留、GUI 背景黑屏，随后重启，主机枚举为 Android ADB。PE 启动失败，具体重启原因未确定。 重启后读回171750字节旧快照，ReadyToBoot与watchdog关闭可见，最后保存点为efi-shell-start，尚无EBS/内核错误记录。",
+      "evidence": "本轮完整目录上传、WIM CRC 和四个启动文件列表通过；执行启动后用户观察到鼠标保留、GUI 背景黑屏，随后重启，主机枚举为 Android ADB。PE 启动失败，具体重启原因未确定。 重启后读回171750字节旧快照，ReadyToBoot与watchdog关闭可见，最后保存点为efi-shell-start，尚无EBS/内核错误记录。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -6894,7 +6899,7 @@
       "no_overlap": false,
       "layer": 15,
       "x": 6328,
-      "y": 764,
+      "y": 705,
       "upstream": [
         "dxe_core",
         "chipinfo",
@@ -6927,6 +6932,130 @@
         "usb_cdc",
         "ram_disk",
         "ram_upload",
+        "efi_remote_boot",
+        "acpi_runtime"
+      ]
+    },
+    {
+      "i": 120,
+      "id": "glink_transport",
+      "name": "GLINK 分段只读观察",
+      "group": "core",
+      "group_label": "平台核心",
+      "group_color": "#58a6ff",
+      "status": "partial",
+      "status_label": "部分可用",
+      "icon": "⚠️",
+      "color": "#d29922",
+      "base": null,
+      "size": null,
+      "base_str": "—",
+      "size_str": "—",
+      "range_str": "",
+      "irq": [],
+      "compatible": "",
+      "driver": "PlatformTransports / SmemReadCore",
+      "dt_path": "",
+      "deps": [
+        "smem",
+        "ipcc",
+        "glink"
+      ],
+      "soft_deps": [],
+      "dependents": [],
+      "blockers": [],
+      "direct_blockers": [],
+      "blocked": false,
+      "contradiction": false,
+      "notes": "AP/ADSP、MODEM、CDSP私有分区只读对齐复制；三个descriptor和TX可读，RX未分配，不写FIFO或ACK。",
+      "evidence": "AP/ADSP、MODEM、CDSP私有分区只读对齐复制；三个descriptor和TX可读，RX未分配，不写FIFO或ACK。",
+      "state_note": "",
+      "updated": "2026-11-03",
+      "tags": [],
+      "patch": {},
+      "no_overlap": false,
+      "layer": 6,
+      "x": 2408,
+      "y": 174,
+      "upstream": [
+        "dxe_core",
+        "chipinfo",
+        "hwio",
+        "dalsys",
+        "smem",
+        "ipcc",
+        "glink"
+      ]
+    },
+    {
+      "i": 121,
+      "id": "win_bootcheck",
+      "name": "Windows ARM64 启动检查",
+      "group": "core",
+      "group_label": "平台核心",
+      "group_color": "#58a6ff",
+      "status": "partial",
+      "status_label": "部分可用",
+      "icon": "⚠️",
+      "color": "#d29922",
+      "base": null,
+      "size": null,
+      "base_str": "—",
+      "size_str": "—",
+      "range_str": "",
+      "irq": [],
+      "compatible": "",
+      "driver": "WinBootReadiness / CDC test bootcheck",
+      "dt_path": "",
+      "deps": [
+        "acpi_runtime",
+        "efi_remote_boot"
+      ],
+      "soft_deps": [],
+      "dependents": [],
+      "blockers": [],
+      "direct_blockers": [],
+      "blocked": false,
+      "contradiction": false,
+      "notes": "ACPI表、GICC/GICR、GTDT、GOP、RNG及ACTLR只读检查可见；不等于Windows兼容性验收。",
+      "evidence": "ACPI表、GICC/GICR、GTDT、GOP、RNG及ACTLR只读检查可见；不等于Windows兼容性验收。",
+      "state_note": "",
+      "updated": "2026-11-03",
+      "tags": [],
+      "patch": {},
+      "no_overlap": false,
+      "layer": 15,
+      "x": 6328,
+      "y": 587,
+      "upstream": [
+        "dxe_core",
+        "chipinfo",
+        "hwio",
+        "ipcc",
+        "gic",
+        "timer",
+        "tlmm",
+        "rpmh",
+        "gcc",
+        "icb",
+        "usb_config",
+        "usb_tcsr",
+        "usb_hsphy",
+        "usb_dwc3",
+        "dispcc",
+        "mdss",
+        "dsi0",
+        "panel",
+        "disp_console",
+        "buttons",
+        "pmic_arb",
+        "smmu",
+        "usb_refclk",
+        "usb_noc",
+        "usb_smmu",
+        "ram_log",
+        "usb_stock_replay",
+        "usb_cdc",
         "efi_remote_boot",
         "acpi_runtime"
       ]
@@ -8182,6 +8311,31 @@
       "f": 109,
       "t": 119,
       "soft": false
+    },
+    {
+      "f": 4,
+      "t": 120,
+      "soft": false
+    },
+    {
+      "f": 5,
+      "t": 120,
+      "soft": false
+    },
+    {
+      "f": 6,
+      "t": 120,
+      "soft": false
+    },
+    {
+      "f": 109,
+      "t": 121,
+      "soft": false
+    },
+    {
+      "f": 108,
+      "t": 121,
+      "soft": false
     }
   ],
   "groups": [
@@ -8190,7 +8344,7 @@
       "label": "平台核心",
       "color": "#58a6ff",
       "desc": "",
-      "count": 18
+      "count": 20
     },
     {
       "id": "clock",
@@ -8264,19 +8418,19 @@
     }
   ],
   "stats": {
-    "total": 120,
+    "total": 122,
     "counts": {
       "ok": 40,
-      "partial": 51,
+      "partial": 53,
       "patched": 9,
       "fail": 2,
       "todo": 6,
       "unknown": 7,
       "unused": 5
     },
-    "applicable": 115,
+    "applicable": 117,
     "done": 49,
-    "progress": 42.6,
+    "progress": 41.9,
     "blocked": 4,
     "blocked_ids": [
       "usb_hid",
@@ -8287,7 +8441,7 @@
     "contradictions": [],
     "partial_blocked": [],
     "conflicts": 0,
-    "hard_edges": 223,
+    "hard_edges": 228,
     "soft_edges": 27,
     "layers": 17,
     "patches": {
@@ -8310,7 +8464,7 @@
     "tree": "devtree\\examples\\shennong.tree.yaml",
     "state": "devtree\\examples\\shennong.state.yaml"
   },
-  "generated": "2026-11-03 11:41",
+  "generated": "2026-11-03 13:48",
   "issues": {
     "fail": [
       "spss",

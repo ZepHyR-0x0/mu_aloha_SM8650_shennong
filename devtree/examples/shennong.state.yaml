@@ -1,11 +1,13 @@
 meta:
   updated: '2026-11-03'
   source: CDC 命令实机验证与用户触感/发光反馈；每项注明已验证范围
-  image_sha256: c55947484c7c9635df6791e6ba2728a970531a267bd822934ce7a8824d29593e
-  baseline: stock USB 硬件链锁定；仅扩展 CDC、RAM 文件与恢复上层
+  image_sha256: 0f6d90402184ea33bf5c28a362d453d3bc9ab3c4202a21e54a4b9fe4d6c9fb2e
+  baseline: stock USB 二进制锁定；授权窗口/SS/RAM 路径扩展后重新锁定
   hardware_evidence_image_sha256: bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d
   previous_candidate_evidence_image_sha256: c873fa957c63edeeba5501ac60e7f94b5b0b1878788d3249ed03f26455bae0b9
-  candidate_acceptance: 当前候选：临时启动、CDC、3072 字节 EFI 执行/返回和跨冷重启日志读回；512 MiB PE 上传、WIM CRC 与四个文件列表通过，PE 重启后启动边界快照 CRC 通过；上传性能/MSC 沿用前一候选，触感/发光与物理拔插沿用 USB/平台二进制相同的已验收基线。
+  candidate_acceptance: 当前候选临时启动、CDC、bootcheck、GLINK 分段读取、无线/传感器依赖和 RPMB 只读通过。上传对照与
+    EFI 返回来自 USB/FrontPage 同源码候选；SS 请求仍协商 HS。本轮完整目录上传、WIM CRC 和四个启动文件列表通过；执行启动后用户观察到鼠标保留、GUI
+    背景黑屏，随后重启，主机枚举为 Android ADB。PE 启动失败，具体重启原因未确定。 重启后读回171750字节旧快照，ReadyToBoot与watchdog关闭可见，最后保存点为efi-shell-start，尚无EBS/内核错误记录。
 states:
   dxe_core:
     state: ok
@@ -39,13 +41,15 @@ states:
     evidence: ArmTimerDxe 分发；Metronome 可用
   tlmm:
     state: ok
-    evidence: '[TP] gpio48/49/50/51 SPI mux 成功；gpio161 reset、gpio162 IRQ、gpio164 avdd 均读写正确
+    evidence: '[TP] gpio48/49/50/51 SPI mux 成功；gpio161 reset、gpio162 IRQ、gpio164 avdd
+      均读写正确
 
       '
     note: 早期 TouchProbeDxe 读 TLMM 会重启，该探针已禁用；触摸驱动自己的 GPIO 访问是正常的。
   aoss:
     state: ok
-    evidence: '[GCD] AOSS @0xB000000 in [0xB000000+0x5000000] type=mmio attr=4001；旧 AOSS nonexistent 现象不再出现'
+    evidence: '[GCD] AOSS @0xB000000 in [0xB000000+0x5000000] type=mmio attr=4001；旧
+      AOSS nonexistent 现象不再出现'
   rpmh:
     state: ok
     evidence: 'b196: ldoi1=44500/880mV、ldoi3=44600/1200mV，VRM三个请求全部完成。'
@@ -53,7 +57,8 @@ states:
     updated: '2026-10-29'
   gcc:
     state: patched
-    evidence: PatchedBinaries/ClockDxe.efi 与 stock 差 4 字节 @0xA810；DXE.inc:215 已启用；[TP] clock by name -> Success, id=0x10128
+    evidence: PatchedBinaries/ClockDxe.efi 与 stock 差 4 字节 @0xA810；DXE.inc:215 已启用；[TP]
+      clock by name -> Success, id=0x10128
     note: DXE.inc 注释称它“就是 stock”，但哈希不符（stock 是 ClockDxe.efi.bak / extract 版本）。
   icb:
     state: partial
@@ -120,7 +125,8 @@ states:
     note: 未再读取b208异常地址0C276000；此读数只说明本次EUD开关状态。
   usb_hsphy:
     state: patched
-    evidence: 原厂硬件链初始化后 CDC 和 MSC 在 Windows 枚举并传输；PHY/repeater/PMIC/时钟源保持源码锁。驱动可用范围不代表 USB 主机或 USB3 已完成。
+    evidence: 原厂硬件链初始化后 CDC 和 MSC 在 Windows 枚举并传输；PHY/repeater/PMIC/时钟源保持源码锁。驱动可用范围不代表
+      USB 主机或 USB3 已完成。
     updated: '2026-11-03'
   usb_ssphy:
     state: partial
@@ -184,7 +190,8 @@ states:
     updated: '2026-10-29'
   touch:
     state: ok
-    evidence: b318 已解决：根因是 L12/IOVDD 在 UEFI 中未投电，投电后芯片应答 S3910 A0B0-15.2；传输层为 GPIO 位翻转 SPI。b329 增加 BootMenu 拖拽滚动。
+    evidence: b318 已解决：根因是 L12/IOVDD 在 UEFI 中未投电，投电后芯片应答 S3910 A0B0-15.2；传输层为 GPIO
+      位翻转 SPI。b329 增加 BootMenu 拖拽滚动。
     note: 滚动手感与FileBrowser一致；重复点击不再重复堆分配。
     updated: '2026-11-02'
   buttons:
@@ -194,7 +201,8 @@ states:
     updated: '2026-10-29'
   pmic_arb:
     state: patched
-    evidence: PatchedBinaries/SPMIDxe.efi 与 stock 差 8 字节 @0x154C；DXE.inc:77 已启用；charger port 0 rc=0 raw=0x1
+    evidence: PatchedBinaries/SPMIDxe.efi 与 stock 差 8 字节 @0x154C；DXE.inc:77 已启用；charger
+      port 0 rc=0 raw=0x1
     note: SPMI 通路可用，AOSS 也已正确映射。
   pmic:
     state: partial
@@ -239,7 +247,7 @@ states:
     updated: '2026-11-03'
   wlan:
     state: partial
-    evidence: TEST 和 CDC 提供列表与 provider 状态；WiFi providers=0，真实 AP 扫描尚不可用。
+    evidence: WCN7850 17cb:1107 实机识别成功；电源、时钟、PHY、PCIe 链路与资源恢复通过；MHI/QMI/AP 扫描/流量仍缺失。
     updated: '2026-11-03'
   nfc:
     state: unknown
@@ -259,7 +267,8 @@ states:
     updated: '2026-10-31'
   usb_smmu:
     state: partial
-    evidence: 原厂 USB DMA 分配、提交与地址预检保留；CDC 上传与 MSC 回读正确。停止异常保留 DMA 缓冲，SMMU 隔离及 Windows 阶段映射仍须独立验证。
+    evidence: 原厂 USB DMA 分配、提交与地址预检保留；CDC 上传与 MSC 回读正确。停止异常保留 DMA 缓冲，SMMU 隔离及 Windows
+      阶段映射仍须独立验证。
     updated: '2026-11-03'
   ram_log:
     state: partial
@@ -268,11 +277,13 @@ states:
     updated: '2026-10-31'
   usb_ep0_queue:
     state: ok
-    evidence: 原厂 EP0 负责枚举；配置后重复 GET_DESCRIPTOR 在已有 EP0 ownership 下由上层接管，避免重复状态响应。CDC 与 MSC 配置、类控制和回切已通过。
+    evidence: 原厂 EP0 负责枚举；配置后重复 GET_DESCRIPTOR 在已有 EP0 ownership 下由上层接管，避免重复状态响应。CDC
+      与 MSC 配置、类控制和回切已通过。
     updated: '2026-11-03'
   usb_event_dma:
     state: ok
-    evidence: 当前候选 CDC 多窗口文件上传、CRC 回读、MSC 主机文件 SHA256 与回切通过。DMA 始终经原厂缓冲分配和提交；停止后确认 halt 才释放，失败保留缓冲。
+    evidence: 当前候选 CDC 多窗口文件上传、CRC 回读、MSC 主机文件 SHA256 与回切通过。DMA 始终经原厂缓冲分配和提交；停止后确认
+      halt 才释放，失败保留缓冲。
     updated: '2026-11-03'
   pmic_adc:
     state: partial
@@ -311,12 +322,14 @@ states:
     updated: '2026-10-31'
   usb_speed_test:
     state: partial
-    evidence: stock FS TEST仍不支持；b319以USB TEST和持久停点验证。
+    evidence: revision 9；默认 HS，TEST/CDC 可选易失 SS，未配置 15 秒回 HS。SS 请求/回 HS 成功，实机 negotiated
+      EFI=3、packet=512，未建立 SS 链路。
     note: 不能把Unsupported视为成功执行FS枚举测试。
-    updated: '2026-10-31'
+    updated: '2026-11-03'
   usb_manual_tpl:
     state: ok
-    evidence: USB pump 在 TPL_APPLICATION 调用原厂 HandleEvent，退出 pump 后执行切换与恢复；重入被拒绝。MSC 事务等待与真实 CDC 拔插恢复已验证。
+    evidence: USB pump 在 TPL_APPLICATION 调用原厂 HandleEvent，退出 pump 后执行切换与恢复；重入被拒绝。MSC
+      事务等待与真实 CDC 拔插恢复已验证。
     updated: '2026-11-03'
   usb_init_event:
     state: partial
@@ -340,11 +353,13 @@ states:
     note: 最终FV含12/12字节报告，已撤after-phy/at-link重复写；等待b223实测。
   usb_image_packaging:
     state: ok
-    evidence: 当前镜像 SHA256 bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d；原厂 USB、PMIC、SPMI、UFS 二进制与 FV 来源检查通过，两树 30 个源码锁文件一致。
+    evidence: 当前镜像 SHA256 bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d；原厂
+      USB、PMIC、SPMI、UFS 二进制与 FV 来源检查通过，两树 30 个源码锁文件一致。
     updated: '2026-11-03'
   usb_device_dispatch:
     state: ok
-    evidence: 原厂 UsbDeviceDxe 驻留与协议发布已核对；StartEx、HandleEvent、Stop 由上层在 TPL_APPLICATION 调用，当前候选 CDC/MSC 枚举和切换实机通过。
+    evidence: 原厂 UsbDeviceDxe 驻留与协议发布已核对；StartEx、HandleEvent、Stop 由上层在 TPL_APPLICATION
+      调用，当前候选 CDC/MSC 枚举和切换实机通过。
     updated: '2026-11-03'
   usb_stock_replay:
     state: partial
@@ -443,7 +458,8 @@ states:
     updated: '2026-10-31'
   project_info_cache:
     state: ok
-    evidence: b323 retained SMEM135 chip557 valid1；包装安装，原厂Device Error回退verified ABL cache成功。
+    evidence: b323 retained SMEM135 chip557 valid1；包装安装，原厂Device Error回退verified ABL
+      cache成功。
     note: 板号回退不等于ADC测量恢复；247 OEM行/16 shennong行范围保护保留。
     updated: '2026-10-31'
   usb_stream_handoff:
@@ -453,7 +469,8 @@ states:
     updated: '2026-10-31'
   usb_cable_lifecycle:
     state: patched
-    evidence: 多次真实 CDC 拔插自动恢复，含日志接收中断；线缆下降沿取消会话，200 ms 后在 pump 外执行原厂 Stop/StartEx。原文件 CRC 与再次切换通过，锁释放已核对；大文件替换上传中断尚未捕获。当前 USB 上层及 stock 硬件链按源码锁固定。
+    evidence: 多次真实 CDC 拔插自动恢复，含日志接收中断；线缆下降沿取消会话，200 ms 后在 pump 外执行原厂 Stop/StartEx。原文件
+      CRC 与再次切换通过，锁释放已核对；大文件替换上传中断尚未捕获。当前 USB 上层及 stock 硬件链按源码锁固定。
     updated: '2026-11-03'
   usb_phy_clock:
     state: partial
@@ -466,7 +483,8 @@ states:
     updated: '2026-11-03'
   usb_msc:
     state: ok
-    evidence: Windows 挂载共享 RAM，98 / 131333 字节文件主机 SHA256 校验通过；定时回 CDC 后同一文件 CRC 和 NSH 再执行通过。
+    evidence: Windows 挂载共享 RAM，98 / 131333 字节文件主机 SHA256 校验通过；定时回 CDC 后同一文件 CRC 和
+      NSH 再执行通过。
     updated: '2026-11-03'
   usb_cdc:
     state: ok
@@ -474,7 +492,8 @@ states:
     updated: '2026-11-03'
   ram_disk:
     state: partial
-    evidence: 64 / 128 MiB 实机精确分配，0 / 512 / 1024 / 66048 字节上传 CRC 通过；中断替换保留原文件。CDC 与本地只读文件系统共用一个 backing，MSC 使用同一内存。8192 MiB 仅几何/边界验证，实机大容量受可用内存限制。
+    evidence: 64..8192 MiB 上限；本轮 64/512 MiB 分配使用 EfiReservedMemoryType，所有权标记后追加标准
+      RAM disk 路径。CDC/MSC/local 共用一个 backing，本地只读；8 GiB 实机分配未验收。
     updated: '2026-11-03'
   log_refresh:
     state: partial
@@ -483,16 +502,19 @@ states:
     updated: '2026-10-31'
   ram_upload:
     state: ok
-    evidence: 客户端按已知长度读取每个 64 KiB 窗口的 ACK，避免等待 64 KiB 接收缓冲填满；普通命令和长正文沿用原接收路径。相同固件交替上传 4 MiB，旧客户端约 0.49 MiB/s，新客户端约 0.68 MiB/s，提升 40%，CRC 与完整日志帧通过。344.1
-      MiB WIM 实测 256.4 秒，平均 1.34 MiB/s，CRC 回读通过。页面上传期间使用最多 16 次 / 4 ms 的应用事件服务，并在页面等待中每 1 ms 服务；上传结束或取消后恢复正常等待。USB 驱动二进制与 30 项源码锁保持不变。
+    evidence: 4 MiB 交替实测：64 KiB ACK 0.67–0.68 MiB/s，1 MiB ACK 1.78 MiB/s，四次 CRC 一致；单次
+      native DMA 最大64 KiB。 本轮 344.1 MiB WIM 上传 186.2 秒（1.85 MiB/s），CRC 回读通过。 CRC/断线替换和
+      8 GiB 几何离线检查通过。
     updated: '2026-11-03'
   efi_remote_boot:
     state: ok
-    evidence: 3072 字节 ARM64 EFI 的易失执行标记与返回通过；efi-shell-start/return 保存成功，冷重启后旧快照 154821 字节、CRC 通过。当前候选 PE 完整目录、WIM CRC 和四个启动文件列表通过；PE 后重启回 Android，日志 seq=100、156133 字节，最后保存点为进入 Shell 前的 efi-shell-start，没有对应返回或具体错误码。
+    evidence: ReadyToBoot 一次触发及 Windows 拦截器日志通过；NSH 和 3072 字节 EFI 执行/返回通过。修正 PE SizeOfImage、限制查找/修补边界并同步缓存；ACTLR_EL1
+      在本机 EL1 可读，禁用继承的 ACTLR 删除补丁。
     updated: '2026-11-03'
   acpi_runtime:
     state: partial
-    evidence: 实机导出 15 张表，适用 checksum 与 FADT/DSDT/FACS 关联通过，MADT 8 CPU；DSDT OEM 仍含 SDM8550，WinPE 适配未完成。
+    evidence: 发布候选实机15张表适用checksum通过；8个80字节GICC和独立GICR，GTDT 29/30/27/26、Always On；FADT
+      reduced/PSCI/SMC、GOP与RNG可见，MemoryAttribute provider缺失。
     updated: '2026-11-03'
   smc_capabilities:
     state: partial
@@ -524,13 +546,22 @@ states:
     updated: '2026-11-03'
   gps_fix:
     state: todo
-    evidence: 可查询平台/固件依赖；没有定位 fix 或 NMEA 数据证据。
+    evidence: MODEM GLINK 描述符与16 KiB TX可读，RX未建立；没有GNSS fix/NMEA证据。
     updated: '2026-11-03'
   gyro_samples:
     state: todo
-    evidence: ADSP MDT 与配置文件只读可达；ADSP/Sensor 服务及实时采样尚未完成。
+    evidence: ADSP MDT/配置可读，GLINK描述符与16 KiB TX可读，RX未建立；没有SSC实时采样。
     updated: '2026-11-03'
   winpe_ram_boot:
     state: fail
-    evidence: ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。当前候选重试：完整目录上传、WIM CRC 与四个启动文件列表检查通过；启动后回到 Android，旧日志最后保存点为 efi-shell-start（进入 Shell 前），没有对应返回记录。PE 启动失败，重启原因待定位。重启后读回 seq=100、156133 字节快照，CRC 通过。
+    evidence: 本轮完整目录上传、WIM CRC 和四个启动文件列表通过；执行启动后用户观察到鼠标保留、GUI 背景黑屏，随后重启，主机枚举为 Android
+      ADB。PE 启动失败，具体重启原因未确定。 重启后读回171750字节旧快照，ReadyToBoot与watchdog关闭可见，最后保存点为efi-shell-start，尚无EBS/内核错误记录。
+    updated: '2026-11-03'
+  glink_transport:
+    state: partial
+    evidence: AP/ADSP、MODEM、CDSP私有分区只读对齐复制；三个descriptor和TX可读，RX未分配，不写FIFO或ACK。
+    updated: '2026-11-03'
+  win_bootcheck:
+    state: partial
+    evidence: ACPI表、GICC/GICR、GTDT、GOP、RNG及ACTLR只读检查可见；不等于Windows兼容性验收。
     updated: '2026-11-03'

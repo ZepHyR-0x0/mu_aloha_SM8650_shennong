@@ -11,6 +11,9 @@
   PlatformDevices.c
   PlatformReadOnly.c
   PlatformControls.c
+  PlatformTransports.c
+  SmemReadCore.h
+  WinBootReadiness.c
 [Packages]
   MdePkg/MdePkg.dec
   AndromedaPkg/AndromedaPkg.dec
@@ -29,6 +32,8 @@
   UefiBootServicesTableLib
   UefiRuntimeServicesTableLib
 [Protocols]
+  gEfiRngProtocolGuid
+  gEfiMemoryAttributeProtocolGuid
   gEfiAcpiSdtProtocolGuid
   gEfiLoadedImageProtocolGuid
   gEfiBlockIoProtocolGuid

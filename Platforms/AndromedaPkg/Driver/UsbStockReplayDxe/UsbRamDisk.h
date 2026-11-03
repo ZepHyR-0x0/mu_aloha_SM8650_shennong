@@ -19,10 +19,13 @@ STATIC EFI_BLOCK_IO_PROTOCOL mRamBlock;
 #pragma pack(push,1)
 STATIC struct {
   VENDOR_DEVICE_PATH Vendor;
+  MEDIA_RAM_DISK_DEVICE_PATH RamDisk;
   EFI_DEVICE_PATH_PROTOCOL End;
 } mRamPath = {
   {{HARDWARE_DEVICE_PATH,HW_VENDOR_DP,{sizeof(VENDOR_DEVICE_PATH),0}},
    USB_RAM_DISK_DEVICE_GUID},
+  {{MEDIA_DEVICE_PATH,MEDIA_RAM_DISK_DP,{sizeof(MEDIA_RAM_DISK_DEVICE_PATH),0}},
+   {0,0},{0,0},EFI_VIRTUAL_DISK_GUID,0},
   {END_DEVICE_PATH_TYPE,END_ENTIRE_DEVICE_PATH_SUBTYPE,{4,0}}
 };
 #pragma pack(pop)
@@ -95,6 +98,10 @@ STATIC EFI_STATUS RamPublish (VOID)
 {
   EFI_STATUS S;
   if (mRamDisk==NULL || mRamUsbOwned || mRamMutating || mRamHandle!=NULL) return EFI_SUCCESS;
+  // Preserve the vendor ownership marker and append the UEFI-defined RAM
+  // disk media node. Boot clients can identify the backing memory extent.
+  WriteUnaligned64((UINT64 *)mRamPath.RamDisk.StartingAddr,(UINTN)mRamDisk);
+  WriteUnaligned64((UINT64 *)mRamPath.RamDisk.EndingAddr,(UINTN)mRamDisk+mRamBytes-1);
   ZeroMem(&mRamMedia,sizeof(mRamMedia));
   mRamMedia.MediaId=0xB327;mRamMedia.MediaPresent=TRUE;mRamMedia.ReadOnly=TRUE;
   mRamMedia.LogicalPartition=TRUE;
@@ -111,7 +118,9 @@ STATIC EFI_STATUS RamAllocate (VOID)
   EFI_STATUS S;
   if (mRamDisk!=NULL) return EFI_SUCCESS;
   UINTN Bytes=(UINTN)mRamRequestedMiB*1024*1024;
-  S=gBS->AllocatePages(AllocateAnyPages,EfiBootServicesData,EFI_SIZE_TO_PAGES(Bytes),&Address);
+  // Keep the boot volume alive across ExitBootServices. Explicit RAM release
+  // still frees the same allocation; the OS must not reclaim a live backing.
+  S=gBS->AllocatePages(AllocateAnyPages,EfiReservedMemoryType,EFI_SIZE_TO_PAGES(Bytes),&Address);
   if (EFI_ERROR(S)) return S;
   mRamBytes=Bytes;
   mRamDisk=(UINT8 *)(UINTN)Address;RamFormat(mRamDisk);

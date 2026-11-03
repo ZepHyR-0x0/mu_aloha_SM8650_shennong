@@ -40,7 +40,7 @@
   AsciiPrint(x, __VA_ARGS__);                                                  \
   DEBUG((EFI_D_ERROR, x, __VA_ARGS__));
 #else
-#define FirmwarePrint(x, ...)
+#define FirmwarePrint(...) DEBUG((DEBUG_ERROR,__VA_ARGS__))
 #endif
 
 #define NT_OS_LOADER_ARM64_TRANSFER_TO_KERNEL_FUNCTION_OFFSET 0x400

@@ -22,6 +22,7 @@ VOID EFIAPI ReadyToBootHandler(IN EFI_EVENT Event, IN VOID *Context)
   PERF_CALLBACK_BEGIN(&gEfiEventReadyToBootGuid);
   
   InstallEFIBSIntercepter();
+  DEBUG((DEBUG_ERROR,"[WINLOAD] ReadyToBoot: EBS interceptor installed\n"));
   gBS->CloseEvent(mReadyToBootEvent);
 
   PERF_CALLBACK_END(&gEfiEventReadyToBootGuid);

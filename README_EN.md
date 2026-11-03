@@ -8,8 +8,8 @@
 **Project Mu** UEFI port for **Xiaomi 14 Pro** (shennong / SM8650): SM8650 overlay sources, one-click build scripts, bootable image, and device status visualization.
 
 - Development snapshot: 2026-11-03; DEBUG / ShennongNoSb.
-- Image: `Build/ShennongPkg/xiaomi-shennong.img`, 2,785,280 bytes
-  SHA256 `c55947484c7c9635df6791e6ba2728a970531a267bd822934ce7a8824d29593e`
+- Image: `Build/ShennongPkg/xiaomi-shennong.img`, 2,789,376 bytes
+  SHA256 `0f6d90402184ea33bf5c28a362d453d3bc9ab3c4202a21e54a4b9fe4d6c9fb2e`
 - Baseline: Project Mu Aloha `dev/update/mu202502`
 
 ## Screenshots
@@ -38,15 +38,21 @@ USB uses the unchanged stock hardware chain. Shared RAM MSC mounting, host file 
 
 The CDC client exposes `ramdisk create/info/hash/release`, `--upload ... --dest ...`, `shell <command>`, `boot <mapped.efi>`, `usb ramdisk <return-seconds>`, `test`, `haptic` and read only RPMB commands. CDC, local read only BlockIo and MSC share one RAM backing allocation. Resolve FS mappings through `shell map -r`.
 
-The client supports `--upload-dir path/to/media` to preserve a complete boot file tree. A local ARM64 ADK 28000.1 minimal command-prompt PE (344.1 MiB, LZX, OfflineAll SAN policy, automount disabled) has passed WIM integrity and ARM64 loader checks. On the current candidate, all 23 media files, WIM CRC readback and four boot-file listings passed. Boot was accepted, then the phone rebooted to Android. The recovered 156133-byte snapshot has phase `efi-shell-start`; no matching return or specific PE error was captured. The reboot cause remains unresolved.
+The client supports `--upload-dir path/to/media` to preserve the complete boot tree. The local ARM64 ADK 28000.1 command-prompt PE uses LZX, OfflineAll and disabled automount. The full media tree, WIM CRC and four boot-file listings passed. After launch, the user observed a retained mouse pointer, black GUI background and a reboot; the host enumerated Android ADB. PE boot failed; the specific reboot cause is unresolved. After reboot, a 171750-byte snapshot confirmed ReadyToBoot and watchdog shutdown, ending at efi-shell-start; no EBS/kernel error record was recovered.
 
-Firmware and client default to CDC line coding 3,000,000 8N1, overridable with `--baud`. File receives are submitted in batches up to 64 KiB; baud alone does not determine this USB path's throughput. Known-length ACK reads avoid waiting for a 64 KiB receive buffer after each upload window. Normal replies retain the established bulk-read path. Alternating 4 MiB uploads on the same firmware measured 0.49 MiB/s with the old client and 0.68 MiB/s with the new client (40% faster), with CRC and complete log framing verified. The 344.1 MiB WIM took 256.4s (1.34 MiB/s), with CRC readback. During uploads, custom pages service bounded bursts and slice page waits at 1 ms; normal waits resume after commit or cancellation. USB driver binaries and all 30 source-lock entries are unchanged.
+Firmware and client default to 3,000,000 8N1; baud alone does not limit this USB data path. The client negotiates a 1 MiB ACK window with `put2`; each native DMA transfer remains at most 64 KiB. `--upload-window 65536` selects the old window. Legacy fallback occurs only on an explicit unknown-command reply. Nibble-table CRC32 retains streamed CRC, final padding and disconnect cancellation. Alternating 4 MiB transfers measured 0.67–0.68 MiB/s with 64 KiB ACKs and 1.78 MiB/s with 1 MiB ACKs, about 2.6 times faster; all four CRCs matched. The current 344.1 MiB WIM upload took 186.2s (1.85 MiB/s), with CRC readback verified. The comparison used candidate 1fa1536c; its USB module binary is identical to this release, whose platform checks were retested.
 
 Queued and active switches exclude other switches and RAM changes. A switch drains the current control/BOT response for at most five seconds and releases its lock on success, disconnect, timeout or stop failure. Unconfirmed controller halt retains DMA buffers. A physical cable falling edge cancels the session and defers stock Stop/StartEx outside the pump by 200 ms. Ordinary bus reset does not take this path. This USB candidate and its stock hardware chain are held by the source lock.
 
 The repository contains production sources and product documentation. Local logs, diagnostic reports and test harnesses stay in the development workspace.
 
-EFI launch now persists Shell start, return and load-failure checkpoints in the existing restricted logfs store, readable through `logcat-last` after reboot. A 3072-byte ARM64 EFI execution marker, normal return and 154821-byte snapshot CRC after a cold reboot have passed. The current image adds FrontPage launch journaling; upload performance evidence comes from the preceding candidate; the current PE retry also rebooted and its launch checkpoint was recovered. The PE reboot cause remains unresolved.
+Remote EFI boot now signals ReadyToBoot once, journals both boundaries, disables the UEFI watchdog and starts through the real Shell console. A returning EFI and the `[WINLOAD] ReadyToBoot` log passed. RAM backing is reserved across ExitBootServices and has a standard RAM disk device path after the ownership marker. The Windows errata patcher fixes PE SizeOfImage at PE+0x50, bounds lookup and patch ranges, and synchronizes code caches. ACTLR_EL1 reads succeeded at EL1 on this phone, so the inherited ACTLR-removal patch is disabled. This is not proof of the earlier reboot cause.
+
+`usb speed hs|ss` selects a volatile speed policy, also available under TEST → USB host. HS remains the default. SS configuration times out to HS CDC after 15s and startup failure uses the same DMA-safe recovery path. Device switching passed, but the SS request still negotiated HS with 512-byte packets; USB 3.0 operation is not validated.
+
+WCN7850 power, clocks, PHY, PCIe link and endpoint 17cb:1107 identification passed with cleanup. MHI/QMI and actual WiFi/Bluetooth scanning are absent. `test glink`, `test mhi`, `test transports`, `test gyro`, `test gps` expose bounded read-only transport checks: all three DSP descriptors and 16 KiB TX rings exist, but RX rings are absent. No sensor samples or GPS fixes are claimed. `test bootcheck` reports ACPI, GICC/GICR, GTDT, GOP, RNG and memory-attribute providers.
+
+Microsoft [WinPE USB instructions](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive?view=windows-11) use FAT32; this WIM is below 4 GiB and does not require NTFS. See [UEFI requirements](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/uefi-requirements-that-apply-to-all-windows-platforms), [ACPI requirements](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/acpi-system-description-tables), [giulia ACPI records](https://github.com/DianKuang0120/giulia-acpi-archive) and [RedMagic 9 bring-up](https://github.com/0Re0-8192/rm9-windows-arm64) for comparisons. Other SM8650 devices do not establish support on Shennong.
 
 ## One-Click Build
 
@@ -90,9 +96,9 @@ The following shows detailed project status:
 
 > Some Markdown previewers (including GitHub) do not render `iframe` for security reasons. If so, click the link above directly, or clone the repo and open `devtree/examples/out/shennong.html` in a browser.
 
-Double-click to open in a local clone; it contains 107 nodes, 204 hard dependencies + 27 soft dependencies, 17 layout levels — searchable, filterable by status/group, clickable nodes with evidence chains, blocking chains, and address conflicts.
+Double-click to open in a local clone; it contains 122 nodes, 228 hard dependencies + 27 soft dependencies, and 17 layout levels. Search and filter by status/group, or inspect evidence and dependency chains.
 
-Current snapshot (`devtree/examples/shennong.state.yaml`, updated 2026-11-02 / b341):
+Current snapshot: `devtree/examples/shennong.state.yaml`, updated 2026-11-03.
 
 
 ## QR Log Reader

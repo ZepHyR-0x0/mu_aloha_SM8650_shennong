@@ -411,6 +411,64 @@ STATIC VOID TsHapticPage (TEST_PAGE *Page, EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *Ke
 }
 
 // List paging uses copies from the resident survey. No callback points here.
+STATIC VOID TsUsbSpeedPage(TEST_PAGE *Page,EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *Keys,EFI_EVENT PaintEvent)
+{
+  EFI_GUID Guid=USB_BRINGUP_PROTOCOL_GUID;USB_BRINGUP_PROTOCOL *Usb=NULL;
+  USB_SPEED_INFO Info;UINTN Focus=1;BOOLEAN Exit=FALSE,Dirty=TRUE;
+  EFI_STATUS Last=EFI_NOT_READY;UIT_TOUCH_GESTURE Tap;ZeroMem(&Tap,sizeof(Tap));
+  CONST CHAR16 *Names[]={L"USB 2.0 / HighSpeed",L"USB 3.0 / experimental",L"Back"};
+  gBS->LocateProtocol(&Guid,NULL,(VOID **)&Usb);
+  while(!Exit){
+    UINTN Action=0;EFI_KEY_DATA Key;ZeroMem(&Info,sizeof(Info));
+    if(Usb!=NULL && Usb->Revision>=9 && Usb->GetSpeed!=NULL)Usb->GetSpeed(Usb,&Info);
+    if(Dirty || gBS->CheckEvent(PaintEvent)==EFI_SUCCESS){
+      CHAR16 Line[160];TsFill(Page,&mTestBg,0,0,Page->Width,Page->Height);
+      TsText(Page,L"USB HOST / SPEED",Page->Left,Page->Top,&mTestBg);
+      UnicodeSPrint(Line,sizeof(Line),L"Host handles=%u  readable volumes=%u",Page->UsbHost.HostHandles,Page->UsbHost.ReadableVolumes);
+      TsText(Page,Line,Page->Left,Page->Top+Page->LineHeight*2,&mTestBg);
+      UnicodeSPrint(Line,sizeof(Line),L"Requested DWC=%u  negotiated EFI=%u  bulk=%u bytes",Info.Requested,Info.Negotiated,Info.BulkPacketBytes);
+      TsText(Page,Line,Page->Left,Page->Top+Page->LineHeight*3,&mTestBg);
+      UnicodeSPrint(Line,sizeof(Line),L"Last=%r  switching=%u  fallback=%u",Last,Info.SwitchBusy,Info.FallbackArmed);
+      TsText(Page,Line,Page->Left,Page->Top+Page->LineHeight*4,&mTestBg);
+      TsText(Page,L"USB 3.0: use a capable cable/port; phone test pending.",Page->Left,Page->Top+Page->LineHeight*5,&mTestBg);
+      TsText(Page,L"No configuration in 15 s: restore USB 2.0 CDC.",Page->Left,Page->Top+Page->LineHeight*6,&mTestBg);
+      for(UINTN I=0;I<3;I++){
+        UINTN Y=Page->Top+Page->LineHeight*8+I*(Page->ButtonHeight+16);
+        EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Color=Focus==I+1?&mTestSelected:&mTestButton;
+        TsFill(Page,Color,Page->Left,Y,Page->Right-Page->Left,Page->ButtonHeight);
+        TsText(Page,(CHAR16 *)Names[I],Page->Left+24,Y+16,Color);
+      }
+      Dirty=FALSE;
+    }
+    if(Keys!=NULL && Keys->ReadKeyStrokeEx(Keys,&Key)==EFI_SUCCESS){
+      if(Key.Key.ScanCode==SCAN_ESC || Key.Key.UnicodeChar==CHAR_BACKSPACE)Action=3;
+      else if(Key.Key.ScanCode==SCAN_UP){Focus=Focus==1?3:Focus-1;Dirty=TRUE;}
+      else if(Key.Key.ScanCode==SCAN_DOWN){Focus=Focus==3?1:Focus+1;Dirty=TRUE;}
+      else if(Key.Key.UnicodeChar==CHAR_CARRIAGE_RETURN || Key.Key.UnicodeChar==L' ')Action=Focus;
+      ZeroMem(&Tap,sizeof(Tap));
+    }
+    EFI_ABSOLUTE_POINTER_STATE Touch;
+    if(Page->Pointer->GetState(Page->Pointer,&Touch)==EFI_SUCCESS){
+      UINTN Target=0;
+      if(Touch.CurrentX>=Page->Left && Touch.CurrentX<Page->Right){
+        for(UINTN I=0;I<3;I++){
+          UINTN Y=Page->Top+Page->LineHeight*8+I*(Page->ButtonHeight+16);
+          if(Touch.CurrentY>=Y && Touch.CurrentY<Y+Page->ButtonHeight)Target=I+1;
+        }
+      }
+      UIT_TAP_RESULT R=UitTouchTap(&Tap,SWM_IS_FINGER_DOWN(Touch),Target,Touch.CurrentX,Touch.CurrentY,
+        GetTimeInNanoSecond(GetPerformanceCounter())/1000000,24);
+      if(Target!=0 && (R==UitTapFocus || R==UitTapConfirm)){Action=Focus=Target;ZeroMem(&Tap,sizeof(Tap));}
+    }
+    if(Action==3)Exit=TRUE;
+    else if(Action==1 || Action==2){
+      Last=Usb==NULL || Usb->Revision<9 || Usb->SelectSpeed==NULL?EFI_UNSUPPORTED:
+        Usb->SelectSpeed(Usb,Action==1?USB_SPEED_HIGH:USB_SPEED_SUPER_EXPERIMENTAL);Dirty=TRUE;
+    }
+    FpServiceEvents();FpServiceDelay(20000);
+  }
+  ZeroMem(&Page->Tap,sizeof(Page->Tap));
+}
 STATIC VOID TsDevicePage (TEST_PAGE *Page, EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *Keys, EFI_EVENT PaintEvent)
 {
   WIRELESS_SURVEY_RESULT *Radio=AllocateZeroPool(sizeof(*Radio));
@@ -532,7 +590,11 @@ STATIC VOID TsDevicePage (TEST_PAGE *Page, EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *Ke
       Mode=Action;First=0;
       if(Action==1) Last=PlatformWirelessScan();
       else if(Action==2) Last=PlatformBluetoothRefresh();
-      else if(Action==3) Last=PlatformSensorTest(TsPlatformOutput,Page,&Sensors);
+      else if(Action==3) {
+        PLATFORM_TRANSPORT_RESULT Transport;
+        Last=PlatformSensorTest(TsPlatformOutput,Page,&Sensors);
+        PlatformTransportTestSelected(TsPlatformOutput,Page,&Transport,1);
+      }
       else {
         Last=PlatformWlanTest(TsPlatformOutput,Page,&Page->Wlan);
         if(Page->Wlan.RootBridges==0 && Page->Wlan.WifiHandles==0) {
@@ -773,6 +835,7 @@ FpTestPage (
         StrCpyS (Page->Message, ARRAY_SIZE (Page->Message), L"Reading existing hardware state...");
         TsPaint (Page);
         Page->LastStatus = PlatformUsbHostTest (TsPlatformOutput, Page, &Page->UsbHost);
+        TsUsbSpeedPage(Page,Keys,PaintEvent);
         Page->ResultPage = Action;
         StrCpyS (Page->Message, ARRAY_SIZE (Page->Message), L"Details: QR Log or CDC logcat.");
       } else if (Action == TS_DISPLAY) {

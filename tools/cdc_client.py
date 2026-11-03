@@ -168,11 +168,15 @@ class Response:
 
 
 class CommandClient:
-    def __init__(self, port, timeout=120, progress=None):
+    def __init__(self, port, timeout=120, progress=None, upload_window=1048576):
+        if upload_window < 65536 or upload_window > 1048576 or upload_window % 65536:
+            raise CdcError('Upload window must be a multiple of 65536, from 65536 to 1048576 bytes.')
         self.port = port
         self.timeout = timeout
         self.progress = progress
         self.pending = bytearray()
+        self.upload_window = upload_window
+        self.legacy_upload = False
 
     def _more(self, deadline, stage, size=65536):
         if time.monotonic() >= deadline:
@@ -280,14 +284,30 @@ class CommandClient:
             while data := stream.read(1024*1024):
                 crc = zlib.crc32(data, crc)
             stream.seek(0)
-            response = self.request(f'put {destination} {size} 0x{crc:08x}')
-            ready = f'OK put ready {size} window=65536'
+            window = self.upload_window
+            legacy = f'put {destination} {size} 0x{crc:08x}'
+            modern = f'put2 {destination} {size} 0x{crc:08x} {window}'
+            if self.legacy_upload or window == 65536 or len(modern.encode('ascii')) > 127:
+                response = self.request(legacy)
+                window = 65536
+            else:
+                try:
+                    response = self.request(modern)
+                except CdcError as error:
+                    # Only this explicit pre-upload rejection establishes that
+                    # the old firmware did not start a RAM transaction.
+                    if str(error) != 'ERR unknown command; type help':
+                        raise
+                    self.legacy_upload = True
+                    response = self.request(legacy)
+                    window = 65536
+            ready = f'OK put ready {size} window={window}'
             if response.kind != 'text' or response.message not in (ready, ready+' pad=1024'):
                 raise CdcError('Invalid upload READY response; close the session to cancel.')
             padded = response.message.endswith(' pad=1024')
             count = actual_crc = 0
             while count < size:
-                data = stream.read(min(65536, size-count))
+                data = stream.read(min(window, size-count))
                 if not data:
                     raise CdcError('Source file changed during upload; close the session to cancel.')
                 wire = data
@@ -444,6 +464,8 @@ def main(default_command=None):
     parser.add_argument('--shell', action='store_true', help='raw UEFI Shell terminal')
     parser.add_argument('--upload', type=Path, help='upload this local file to the shared RAM disk')
     parser.add_argument('--upload-dir', type=Path, help='upload a directory tree, preserving relative paths')
+    parser.add_argument('--upload-window', type=int, default=1048576,
+                        help='upload ACK window bytes: multiples of 65536 up to 1048576 (default); old firmware falls back to 65536')
     parser.add_argument('--dest', help='relative RAM disk destination, e.g. EFI/BOOT/BOOTAA64.EFI')
     parser.add_argument('--local-echo', action='store_true', help='echo typed keys in Shell terminal')
     args = parser.parse_args()
@@ -472,7 +494,7 @@ def main(default_command=None):
         if args.shell:
             terminal(port, args.local_echo)
             return 0
-        client = CommandClient(port, args.timeout, progress_reporter())
+        client = CommandClient(port, args.timeout, progress_reporter(), args.upload_window)
         if args.upload:
             save_response(client.upload(args.upload,args.dest))
         elif args.upload_dir:
