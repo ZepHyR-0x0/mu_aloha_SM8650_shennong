@@ -9,7 +9,7 @@
 
 - 开发快照：2026-11-03，DEBUG / ShennongNoSb
 - 镜像：`Build/ShennongPkg/xiaomi-shennong.img`，2,785,280 字节
-  SHA256 `c873fa957c63edeeba5501ac60e7f94b5b0b1878788d3249ed03f26455bae0b9`
+  SHA256 `c55947484c7c9635df6791e6ba2728a970531a267bd822934ce7a8824d29593e`
 - 基线：Project Mu Aloha `dev/update/mu202502`
 
 ## 界面
@@ -67,6 +67,8 @@ CDC、USB Function 和本地文件系统共用同一块 RAM，不复制盘面。
 切换从排队开始禁止其他切换、RAM 大小修改和释放。TEST 显示 switching 状态；驱动对重入返回 Already Started。回切先等待当前控制/BOT 事务完成，最多 5 秒；成功、拔线、超时和停止失败均完成收尾并释放切换锁。停止失败时保留 DMA 缓冲，后续重连或再次请求可重试。CDC 检测实际线缆下降沿，取消会话，并在 pump 外经过 200 ms 后走原厂 Stop/StartEx；普通总线 reset 不触发这条重建。多次真实 CDC 拔插后自动恢复，含日志接收中断；原文件 CRC 保留与再次切换通过。大文件替换上传中拔线的实机验收尚未捕获。
 
 当前 USB 上层候选与 stock 硬件链按本页镜像及源码锁固定，后续平台推进沿用这个版本。
+
+EFI 启动路径会把 Shell 启动前、返回后及 Shell 加载失败时的日志写入现有受限 logfs 日志区；重启后可用 `logcat-last` 读回。3072 字节 ARM64 EFI 的执行标记、返回与冷重启后 154821 字节旧快照 CRC 已通过。当前镜像只追加 FrontPage 的启动日志保存点；上传性能和 PE 失败记录来自前一候选，PE 重启原因仍待定位。
 
 ```text
 ramdisk create 64

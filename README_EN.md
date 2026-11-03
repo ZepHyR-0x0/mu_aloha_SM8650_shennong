@@ -9,7 +9,7 @@
 
 - Development snapshot: 2026-11-03; DEBUG / ShennongNoSb.
 - Image: `Build/ShennongPkg/xiaomi-shennong.img`, 2,785,280 bytes
-  SHA256 `c873fa957c63edeeba5501ac60e7f94b5b0b1878788d3249ed03f26455bae0b9`
+  SHA256 `c55947484c7c9635df6791e6ba2728a970531a267bd822934ce7a8824d29593e`
 - Baseline: Project Mu Aloha `dev/update/mu202502`
 
 ## Screenshots
@@ -45,6 +45,8 @@ Firmware and client default to CDC line coding 3,000,000 8N1, overridable with `
 Queued and active switches exclude other switches and RAM changes. A switch drains the current control/BOT response for at most five seconds and releases its lock on success, disconnect, timeout or stop failure. Unconfirmed controller halt retains DMA buffers. A physical cable falling edge cancels the session and defers stock Stop/StartEx outside the pump by 200 ms. Ordinary bus reset does not take this path. This USB candidate and its stock hardware chain are held by the source lock.
 
 The repository contains production sources and product documentation. Local logs, diagnostic reports and test harnesses stay in the development workspace.
+
+EFI launch now persists Shell start, return and load-failure checkpoints in the existing restricted logfs store, readable through `logcat-last` after reboot. A 3072-byte ARM64 EFI execution marker, normal return and 154821-byte snapshot CRC after a cold reboot have passed. The current image adds FrontPage launch journaling; upload performance and PE failure evidence come from the preceding candidate. The PE reboot cause remains unresolved.
 
 ## One-Click Build
 

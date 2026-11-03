@@ -152,3 +152,5 @@ python tools/cdc-console.py --port COM20
 已使用本地 ADK 28000.1 构建 344.1 MiB 的 ARM64 命令行 PE，普通 LZX 压缩；未添加桌面、PowerShell、.NET 或第三方驱动。SAN 默认 OfflineAll，关闭自动挂载。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。
 
 目录上传前检查全部文件路径与 FAT32 大小限制；每个文件独立校验 CRC 并提交，失败保留已完成文件。上传 PE 目录前先用 CDC 创建至少 512 MiB RAM，随后上传 media/ 内容，查询 FS 映射并执行 boot。
+
+EFI 启动会在现有受限 logfs 保存 Shell 启动前、返回后及 Shell 加载失败的日志，重启后用 `logcat-last` 读取上一轮快照。3072 字节 ARM64 EFI 的执行标记和返回已验证，冷重启后成功读回 154821 字节快照并校验 CRC；PE 重启原因仍待定位。

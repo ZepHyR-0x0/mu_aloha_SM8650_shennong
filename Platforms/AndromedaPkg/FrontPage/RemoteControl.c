@@ -6,6 +6,7 @@
 #include <Protocol/UsbBringup.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/DebugLib.h>
 #include <Library/DxeServicesLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PrintLib.h>
@@ -14,6 +15,7 @@
 #include "FrontPage.h"
 #include "FrontPageEventService.h"
 #include "RemoteControl.h"
+#include "BootLog.h"
 
 STATIC USB_BRINGUP_PROTOCOL *mRemoteUsb;
 STATIC EFI_HANDLE mRemoteParent,mCaptureHandle;
@@ -74,6 +76,17 @@ STATIC EFI_STATUS EFIAPI CaptureEnable(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This,BOO
 STATIC VOID RemoteTableCrc(VOID)
 { gST->Hdr.CRC32=0;(VOID)gBS->CalculateCrc32(gST,gST->Hdr.HeaderSize,&gST->Hdr.CRC32); }
 
+STATIC VOID RemoteBootCheckpoint(CONST CHAR8 *Command,CONST CHAR8 *Phase,EFI_STATUS Status)
+{
+  EFI_STATUS Saved;
+  DEBUG((DEBUG_ERROR,"[EFIBOOT] phase=%a command=%a status=%r\r\n",Phase,Command,Status));
+  // Preserve the boot boundary in the existing private logfs snapshot. The
+  // RAM ring is reset on the next firmware boot; an early USB snapshot alone
+  // cannot explain an EFI application that subsequently resets the phone.
+  Saved=BootLogSave(Phase);
+  DEBUG((DEBUG_ERROR,"[EFIBOOT] phase=%a snapshot=%r\r\n",Phase,Saved));
+}
+
 STATIC EFI_STATUS RemoteShell(CONST CHAR8 *Command,CHAR8 *Output,UINTN Capacity,UINTN *Bytes)
 {
   STATIC EFI_GUID ShellFile={0x7c04a583,0x9e3e,0x4f1c,{0xad,0x65,0xe0,0x52,0x68,0xd0,0xb4,0xd1}};
@@ -85,17 +98,29 @@ STATIC EFI_STATUS RemoteShell(CONST CHAR8 *Command,CHAR8 *Output,UINTN Capacity,
   if (Command==NULL || *Command==0 || Bytes==NULL || (!Launch && (Output==NULL || Capacity==0))) return EFI_INVALID_PARAMETER;
   *Bytes=0;
   Status=GetSectionFromAnyFv(&ShellFile,EFI_SECTION_PE32,0,&Section,&SectionBytes);
-  if (EFI_ERROR(Status)) return Status;
+  if (EFI_ERROR(Status)) {
+    if(Launch)RemoteBootCheckpoint(Command,"efi-shell-section-failed",Status);
+    return Status;
+  }
   Status=gBS->LoadImage(FALSE,mRemoteParent,NULL,Section,SectionBytes,&Shell);
-  FreePool(Section);if (EFI_ERROR(Status)) return Status;
+  FreePool(Section);if (EFI_ERROR(Status)) {
+    if(Launch)RemoteBootCheckpoint(Command,"efi-shell-load-failed",Status);
+    return Status;
+  }
   Status=gBS->HandleProtocol(Shell,&gEfiLoadedImageProtocolGuid,(VOID **)&Image);
-  if (EFI_ERROR(Status)) { gBS->UnloadImage(Shell);return Status; }
+  if (EFI_ERROR(Status)) {
+    if(Launch)RemoteBootCheckpoint(Command,"efi-shell-protocol-failed",Status);
+    gBS->UnloadImage(Shell);return Status;
+  }
   UnicodeSPrint(Options,sizeof(Options),L"Shell.efi -nostartup -nointerrupt -nomap -noversion -exit %a",Command);
   Image->LoadOptions=Options;Image->LoadOptionsSize=(UINT32)StrSize(Options);
   if(Launch){
     // A boot application can remain running or call ExitBootServices. Keep
     // the real system console; no capture protocol/stack context is installed.
-    Status=gBS->StartImage(Shell,NULL,NULL);(VOID)gBS->UnloadImage(Shell);return Status;
+    RemoteBootCheckpoint(Command,"efi-shell-start",EFI_SUCCESS);
+    Status=gBS->StartImage(Shell,NULL,NULL);
+    RemoteBootCheckpoint(Command,"efi-shell-return",Status);
+    (VOID)gBS->UnloadImage(Shell);return Status;
   }
   ZeroMem(&mCapture,sizeof(mCapture));mCapture.Data=Output;mCapture.Capacity=Capacity;
   ZeroMem(&mCaptureMode,sizeof(mCaptureMode));mCaptureMode.MaxMode=1;mCaptureMode.Attribute=7;
