@@ -6316,8 +6316,8 @@
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "返回式 ARM64 EFI 已通过；当前候选精简 PE 的完整目录、360806696 字节 WIM CRC 和 NSH 核对通过。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。",
-      "evidence": "返回式 ARM64 EFI 已通过；当前候选精简 PE 的完整目录、360806696 字节 WIM CRC 和 NSH 核对通过。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。",
+      "notes": "返回式 ARM64 EFI 已通过；当前候选精简 PE 的完整目录、360806696 字节 WIM CRC 与 NSH 执行标记通过，启动文件列表检查未通过。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。",
+      "evidence": "返回式 ARM64 EFI 已通过；当前候选精简 PE 的完整目录、360806696 字节 WIM CRC 与 NSH 执行标记通过，启动文件列表检查未通过。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -6861,10 +6861,10 @@
       "group": "core",
       "group_label": "平台核心",
       "group_color": "#58a6ff",
-      "status": "partial",
-      "status_label": "部分可用",
-      "icon": "⚠️",
-      "color": "#d29922",
+      "status": "fail",
+      "status_label": "实测失败",
+      "icon": "⛔",
+      "color": "#f85149",
       "base": null,
       "size": null,
       "base_str": "—",
@@ -6885,8 +6885,8 @@
       "direct_blockers": [],
       "blocked": false,
       "contradiction": false,
-      "notes": "ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。",
-      "evidence": "ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。",
+      "notes": "ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。",
+      "evidence": "ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。",
       "state_note": "",
       "updated": "2026-11-03",
       "tags": [],
@@ -8267,9 +8267,9 @@
     "total": 120,
     "counts": {
       "ok": 40,
-      "partial": 52,
+      "partial": 51,
       "patched": 9,
-      "fail": 1,
+      "fail": 2,
       "todo": 6,
       "unknown": 7,
       "unused": 5
@@ -8307,13 +8307,14 @@
     "gap": 112
   },
   "sources": {
-    "tree": "L:\\Desktop\\ProjectMu\\devtree\\examples\\shennong.tree.yaml",
-    "state": "L:\\Desktop\\ProjectMu\\devtree\\examples\\shennong.state.yaml"
+    "tree": "devtree\\examples\\shennong.tree.yaml",
+    "state": "devtree\\examples\\shennong.state.yaml"
   },
-  "generated": "2026-11-03 10:14",
+  "generated": "2026-11-03 11:12",
   "issues": {
     "fail": [
-      "spss"
+      "spss",
+      "winpe_ram_boot"
     ],
     "todo": [
       "audio_out",

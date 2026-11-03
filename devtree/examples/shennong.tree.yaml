@@ -1190,7 +1190,7 @@ nodes:
   deps:
   - dxe_core
   - usb_cdc
-  notes: 返回式 ARM64 EFI 已通过；当前候选精简 PE 的完整目录、360806696 字节 WIM CRC 和 NSH 核对通过。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。
+  notes: 返回式 ARM64 EFI 已通过；当前候选精简 PE 的完整目录、360806696 字节 WIM CRC 与 NSH 执行标记通过，启动文件列表检查未通过。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。
   driver: UsbRemoteCommands / FrontPage RemoteControl
 - id: acpi_runtime
   name: ACPI 表 / 关联 / 分段导出
@@ -1272,4 +1272,4 @@ nodes:
   - efi_remote_boot
   - acpi_runtime
   driver: ARM64 ADK boot manager / winload.efi
-  notes: ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。
+  notes: ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。
