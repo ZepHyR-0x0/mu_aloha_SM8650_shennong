@@ -1190,7 +1190,7 @@ nodes:
   deps:
   - dxe_core
   - usb_cdc
-  notes: 3072 字节 ARM64 EFI 的易失执行标记与返回通过；efi-shell-start/return 日志保存成功，冷重启后 logcat-last 读回 154821 字节、seq=99、phase=efi-shell-return，CRC 通过。前一候选精简 PE 的完整目录、360806696 字节 WIM CRC 与 NSH 执行标记通过，启动文件列表检查未通过。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。
+  notes: 3072 字节 ARM64 EFI 的易失执行标记与返回通过；efi-shell-start/return 保存成功，冷重启后旧快照 154821 字节、CRC 通过。当前候选 PE 完整目录、WIM CRC 和四个启动文件列表通过；PE 后重启回 Android，日志 seq=100、156133 字节，最后保存点为进入 Shell 前的 efi-shell-start，没有对应返回或具体错误码。
   driver: UsbRemoteCommands / FrontPage RemoteControl
 - id: acpi_runtime
   name: ACPI 表 / 关联 / 分段导出
@@ -1272,4 +1272,4 @@ nodes:
   - efi_remote_boot
   - acpi_runtime
   driver: ARM64 ADK boot manager / winload.efi
-  notes: ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。
+  notes: ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。当前候选重试：完整目录上传、WIM CRC 与四个启动文件列表检查通过；启动后回到 Android，旧日志最后保存点为 efi-shell-start（进入 Shell 前），没有对应返回记录。PE 启动失败，重启原因待定位。重启后读回 seq=100、156133 字节快照，CRC 通过。

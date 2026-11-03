@@ -38,7 +38,7 @@ USB uses the unchanged stock hardware chain. Shared RAM MSC mounting, host file 
 
 The CDC client exposes `ramdisk create/info/hash/release`, `--upload ... --dest ...`, `shell <command>`, `boot <mapped.efi>`, `usb ramdisk <return-seconds>`, `test`, `haptic` and read only RPMB commands. CDC, local read only BlockIo and MSC share one RAM backing allocation. Resolve FS mappings through `shell map -r`.
 
-The client supports `--upload-dir path/to/media` to preserve a complete boot file tree. A local ARM64 ADK 28000.1 minimal command-prompt PE (344.1 MiB, LZX, OfflineAll SAN policy, automount disabled) has passed WIM integrity, ARM64 loader, RAM upload and CRC checks. The NSH execution marker passed; the boot-file listing probe did not validate files. Its EFI boot command was accepted twice. On retry, the user observed a black screen or reboot, and Android ADB reappeared on the host. PE boot failed; the reboot cause remains undiagnosed.
+The client supports `--upload-dir path/to/media` to preserve a complete boot file tree. A local ARM64 ADK 28000.1 minimal command-prompt PE (344.1 MiB, LZX, OfflineAll SAN policy, automount disabled) has passed WIM integrity and ARM64 loader checks. On the current candidate, all 23 media files, WIM CRC readback and four boot-file listings passed. Boot was accepted, then the phone rebooted to Android. The recovered 156133-byte snapshot has phase `efi-shell-start`; no matching return or specific PE error was captured. The reboot cause remains unresolved.
 
 Firmware and client default to CDC line coding 3,000,000 8N1, overridable with `--baud`. File receives are submitted in batches up to 64 KiB; baud alone does not determine this USB path's throughput. Known-length ACK reads avoid waiting for a 64 KiB receive buffer after each upload window. Normal replies retain the established bulk-read path. Alternating 4 MiB uploads on the same firmware measured 0.49 MiB/s with the old client and 0.68 MiB/s with the new client (40% faster), with CRC and complete log framing verified. The 344.1 MiB WIM took 256.4s (1.34 MiB/s), with CRC readback. During uploads, custom pages service bounded bursts and slice page waits at 1 ms; normal waits resume after commit or cancellation. USB driver binaries and all 30 source-lock entries are unchanged.
 
@@ -46,7 +46,7 @@ Queued and active switches exclude other switches and RAM changes. A switch drai
 
 The repository contains production sources and product documentation. Local logs, diagnostic reports and test harnesses stay in the development workspace.
 
-EFI launch now persists Shell start, return and load-failure checkpoints in the existing restricted logfs store, readable through `logcat-last` after reboot. A 3072-byte ARM64 EFI execution marker, normal return and 154821-byte snapshot CRC after a cold reboot have passed. The current image adds FrontPage launch journaling; upload performance and PE failure evidence come from the preceding candidate. The PE reboot cause remains unresolved.
+EFI launch now persists Shell start, return and load-failure checkpoints in the existing restricted logfs store, readable through `logcat-last` after reboot. A 3072-byte ARM64 EFI execution marker, normal return and 154821-byte snapshot CRC after a cold reboot have passed. The current image adds FrontPage launch journaling; upload performance evidence comes from the preceding candidate; the current PE retry also rebooted and its launch checkpoint was recovered. The PE reboot cause remains unresolved.
 
 ## One-Click Build
 

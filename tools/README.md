@@ -149,7 +149,7 @@ python tools/cdc-console.py --port COM20
 
 `FSx` 从 `shell map -r` 查找，不能固定盘符。`boot` 只接受单个映射 `.efi` 路径，ACK 后启动并使用真实控制台；客户端保持串口等待返回，断连或未观察到返回会明确报告。NSH 使用 `shell` 命令执行。FAT32 单文件最多 4294967295 字节；大盘不等于可存放大于 4 GiB 的单文件。8 GiB 上限按实际可用内存分配，不自动缩容。
 
-已使用本地 ADK 28000.1 构建 344.1 MiB 的 ARM64 命令行 PE，普通 LZX 压缩；未添加桌面、PowerShell、.NET 或第三方驱动。SAN 默认 OfflineAll，关闭自动挂载。精简 ARM64 PE 完整目录上传与 WIM CRC 已通过；两次 boot 指令接受后 CDC 断开，重试时用户看到黑屏，电脑端随后重新枚举为 Android ADB。PE 启动未成功，重启原因待定位。
+已使用本地 ADK 28000.1 构建 344.1 MiB 的 ARM64 命令行 PE，普通 LZX 压缩；未添加桌面、PowerShell、.NET 或第三方驱动。SAN 默认 OfflineAll，关闭自动挂载。当前候选重试：完整目录上传、WIM CRC 与四个启动文件列表检查通过；启动后回到 Android，旧日志最后保存点为 efi-shell-start（进入 Shell 前），没有对应返回记录。PE 启动失败，重启原因待定位。
 
 目录上传前检查全部文件路径与 FAT32 大小限制；每个文件独立校验 CRC 并提交，失败保留已完成文件。上传 PE 目录前先用 CDC 创建至少 512 MiB RAM，随后上传 media/ 内容，查询 FS 映射并执行 boot。
 
