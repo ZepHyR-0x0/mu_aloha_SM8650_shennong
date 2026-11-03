@@ -33,6 +33,20 @@
 
 当前镜像的实机记录见本地交付目录。
 
+**日志** — 可用
+
+- 支持自动写入 logfs 持久化日志和QR/USB-大容量存储设备/USB-CDC三种传输方式；
+- 引导镜像时长按音量上键开启日志屏显。
+
+**屏幕显示** — 可用
+
+- 1440×3200 面板点亮，帧缓冲控制台可读（无 UART 时的唯一输出通道）
+- 图形界面（FrontPage）可进入：主菜单、文件浏览、电源状态、USB、退出页
+- 开机先显示 Boot Menu，5 秒无操作自动进 GUI；按键或触摸可取消倒计时
+
+| 能力 | 当前结果 |
+|---|---|
+
 | 能力 | 当前结果 |
 |---|---|
 | 屏幕 / 触摸 / OSK | 可用：1440×3200 帧缓冲、GUI 和屏幕键盘 |
@@ -59,6 +73,13 @@ USB 只走 stock 硬件链，原厂 UsbInitDxe、UsbfnDwc3Dxe、UsbDeviceDxe 未
 ## CDC 与共享 RAM
 
 CDC、USB Function 和本地文件系统共用同一块 RAM，不复制盘面。上传时独占 RAM，禁止切换或释放；MSC 接管时撤销本地挂载，归还后恢复本地只读访问。同容量 create 复用原盘，改变容量需要先 release。
+
+**TZ / SMC** — 部分可用
+
+- 普通 SMC 调用有正常回应，ShmBridge 已建立
+- 安全服务没全通：feature TA 签名校验失败（`ret=12`），Keymaster 只到加载器
+
+固件与客户端默认 CDC line coding 为 3,000,000 8N1，baud 本身不限制 USB 吞吐量。默认客户端使用 `put2` 协商 1 MiB 确认窗口，每次 DMA 仍不超过 64 KiB；可用 `--upload-window 65536` 选择旧窗口。旧固件只有明确返回未知命令时才回退 `put`。CRC32 改用固定 nibble 表，末窗保留最多 1023 字节补零、流式 CRC 和断线取消未提交替换。相同候选交替上传 4 MiB，64 KiB 窗口为 0.67–0.68 MiB/s，1 MiB 窗口为 1.78 MiB/s，约 2.6 倍，四次 CRC 一致。 本轮 344.1 MiB WIM 上传 186.2 秒（1.85 MiB/s），CRC 回读通过。 性能对照来自 1fa1536c 候选；发布候选的 USB 模块二进制一致，平台与 Windows 检查在发布候选复测。
 
 固件与客户端默认 CDC line coding 为 3,000,000 8N1，baud 本身不限制 USB 吞吐量。默认客户端使用 `put2` 协商 1 MiB 确认窗口，每次 DMA 仍不超过 64 KiB；可用 `--upload-window 65536` 选择旧窗口。旧固件只有明确返回未知命令时才回退 `put`。CRC32 改用固定 nibble 表，末窗保留最多 1023 字节补零、流式 CRC 和断线取消未提交替换。相同候选交替上传 4 MiB，64 KiB 窗口为 0.67–0.68 MiB/s，1 MiB 窗口为 1.78 MiB/s，约 2.6 倍，四次 CRC 一致。 本轮 344.1 MiB WIM 上传 186.2 秒（1.85 MiB/s），CRC 回读通过。 性能对照来自 1fa1536c 候选；发布候选的 USB 模块二进制一致，平台与 Windows 检查在发布候选复测。
 
@@ -189,9 +210,7 @@ python tools/qr_camera_reader/qr_camera_reader.py --camera 0
 
 本仓库**不包含** Project Mu 公共基础树、其他机型、其他 git 分支和分析/提取目录，由 `build.sh` 自动准备。
 
-## 目标
 
-为 Xiaomi 14 Pro（shennong / SM8650）的 **UniXNU / Hackios** 开发提供可启动、可读 UFS、能通过二维码取日志、并且**状态可视化**的 Project Mu 基座。
 
 ## 安全约束（来自实际 bring-up）
 

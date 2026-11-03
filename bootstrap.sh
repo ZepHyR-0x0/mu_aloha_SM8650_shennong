@@ -24,7 +24,11 @@ if [ ! -d "$BASE/.git" ]; then
   git clone --depth 1 -b "$REF" "$BASE_REPO" "$BASE"
 else
   git -C "$BASE" fetch --depth 1 origin "$REF"
-  git -C "$BASE" checkout -q -B "$REF" FETCH_HEAD
+  # 上一次 bootstrap 已把 overlay 覆盖进 tracked 文件、并改过 .gitmodules 与
+  # 子模块指针，直接 checkout 会被"local changes would be overwritten"拒绝。
+  # 用 -f 强制丢弃这些改动：overlay 随后会被 cp -a 重新铺入，子模块会被
+  # init_submodule 重新钉到指定提交，所以不会丢东西。
+  git -C "$BASE" checkout -f -q -B "$REF" FETCH_HEAD
   git -C "$BASE" reset -q --hard FETCH_HEAD
 fi
 
