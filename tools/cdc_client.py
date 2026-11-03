@@ -174,19 +174,19 @@ class CommandClient:
         self.progress = progress
         self.pending = bytearray()
 
-    def _more(self, deadline, stage):
+    def _more(self, deadline, stage, size=65536):
         if time.monotonic() >= deadline:
             raise CdcError(f'Timed out while reading {stage}.')
         try:
             # usbser may report cbInQue=0 even with an outstanding USB read.
             # Fixed-size reads still return partial data at the 100 ms timeout;
             # using cbInQue would turn a large reply into one-byte IPC calls.
-            data = self.port.read(65536)
+            data = self.port.read(size)
         except Exception as error:
             raise CdcError(f'CDC read failed while reading {stage}: {error}') from error
         self.pending.extend(data)
 
-    def _line(self, deadline, stage):
+    def _line(self, deadline, stage, read_size=65536):
         while True:
             index = self.pending.find(b'\n')
             if index >= 0:
@@ -197,7 +197,7 @@ class CommandClient:
                 return data.removesuffix(b'\r')
             if len(self.pending) > 1024:
                 raise CdcError('Response header is too long. Use --shell for UEFI Shell.')
-            self._more(deadline, stage)
+            self._more(deadline, stage, max(1, read_size-len(self.pending)))
 
     def request(self, command):
         if not command.strip() or '\r' in command or '\n' in command:
@@ -301,9 +301,13 @@ class CommandClient:
                     at += sent
                 actual_crc = zlib.crc32(data, actual_crc)
                 count += len(data)
-                header = self._line(time.monotonic()+self.timeout, 'upload acknowledgement')
                 expected = (f'OK put done {size} crc=0x{crc:08x}' if count == size
                             else f'OK put progress {count}').encode('ascii')
+                # This reply's wire length is known. Read exactly through its
+                # CRLF so a short ACK does not wait 100 ms to fill 64 KiB.
+                # Keep the established bulk-read path for variable replies.
+                header = self._line(time.monotonic()+self.timeout, 'upload acknowledgement',
+                                    read_size=len(expected)+2)
                 if header.lower() != expected.lower():
                     raise CdcError(f'Upload rejected or progress mismatch: {header!r}')
                 if self.progress:
@@ -315,6 +319,31 @@ class CommandClient:
             if actual_crc != crc or stream.read(1):
                 raise CdcError('Source file changed during upload.')
             return Response('text', b'', f'OK uploaded {destination}: {size} bytes crc=0x{crc:08x}')
+
+    def upload_directory(self, source, destination=''):
+        """Upload a file tree in sorted order, preserving relative paths."""
+        source = Path(source)
+        if not source.is_dir():
+            raise CdcError(f'Upload directory does not exist: {source}')
+        files = [file for file in sorted(source.rglob('*')) if file.is_file()]
+        prefix = destination.replace('\\', '/').strip('/')
+        paths = [(file, (prefix+'/' if prefix else '')+file.relative_to(source).as_posix())
+                 for file in files]
+        # Validate the complete tree before beginning its first RAM mutation.
+        for file, relative in paths:
+            size = file.stat().st_size
+            try:
+                command = f'put {relative} {size} 0xffffffff'.encode('ascii')
+            except UnicodeEncodeError as error:
+                raise CdcError(f'RAM upload paths must be ASCII: {relative}') from error
+            if size > 0xffffffff or len(command) > 127 or any(c in relative for c in '\r\n\x00'):
+                raise CdcError(f'File exceeds upload path/size limits: {relative}')
+        total = 0
+        for file, relative in paths:
+            reply = self.upload(file, relative)
+            total += file.stat().st_size
+            print(reply.message, flush=True)
+        return Response('text', b'', f'OK uploaded directory: {len(paths)} files, {total} bytes')
 
 
 def save_response(response, output=None):
@@ -414,6 +443,7 @@ def main(default_command=None):
     parser.add_argument('--output', '-o', type=Path, help='UTF-8 TXT log, decoded BMP screenshot, or Shell output destination')
     parser.add_argument('--shell', action='store_true', help='raw UEFI Shell terminal')
     parser.add_argument('--upload', type=Path, help='upload this local file to the shared RAM disk')
+    parser.add_argument('--upload-dir', type=Path, help='upload a directory tree, preserving relative paths')
     parser.add_argument('--dest', help='relative RAM disk destination, e.g. EFI/BOOT/BOOTAA64.EFI')
     parser.add_argument('--local-echo', action='store_true', help='echo typed keys in Shell terminal')
     args = parser.parse_args()
@@ -423,9 +453,11 @@ def main(default_command=None):
         parser.error('--shell cannot be combined with --command.')
     if args.upload and (args.shell or args.command is not None or not args.dest):
         parser.error('--upload requires --dest and cannot be combined with --shell/--command.')
-    if args.dest and not args.upload:
-        parser.error('--dest requires --upload.')
-    if args.command is None and not args.upload and not args.shell:
+    if args.upload_dir and (args.upload or args.shell or args.command is not None):
+        parser.error('--upload-dir cannot be combined with --upload/--shell/--command.')
+    if args.dest and not (args.upload or args.upload_dir):
+        parser.error('--dest requires --upload or --upload-dir.')
+    if args.command is None and not args.upload and not args.upload_dir and not args.shell:
         args.command = default_command
     port = None
     try:
@@ -443,6 +475,8 @@ def main(default_command=None):
         client = CommandClient(port, args.timeout, progress_reporter())
         if args.upload:
             save_response(client.upload(args.upload,args.dest))
+        elif args.upload_dir:
+            save_response(client.upload_directory(args.upload_dir,args.dest or ''))
         elif args.command is not None:
             save_response(client.request(args.command), args.output)
         else:

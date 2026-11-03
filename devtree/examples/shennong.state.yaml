@@ -1,8 +1,10 @@
 meta:
   updated: '2026-11-03'
   source: CDC 命令实机验证与用户触感/发光反馈；每项注明已验证范围
-  image_sha256: bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d
+  image_sha256: c873fa957c63edeeba5501ac60e7f94b5b0b1878788d3249ed03f26455bae0b9
   baseline: stock USB 硬件链锁定；仅扩展 CDC、RAM 文件与恢复上层
+  hardware_evidence_image_sha256: bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d
+  candidate_acceptance: 当前候选：临时启动、4 MiB 交替提速、CRC、完整日志、3 秒 MSC 回切、512 MiB PE 上传与 NSH 已验证；触感/发光及物理拔插沿用 USB/平台二进制相同的已验收基线。
 states:
   dxe_core:
     state: ok
@@ -480,11 +482,12 @@ states:
     updated: '2026-10-31'
   ram_upload:
     state: ok
-    evidence: 默认 CDC line coding 3,000,000；文件 RX 最大 64 KiB。1 MiB 上传实测 2.08 秒（491 KiB/s），CRC 正确；提速来自接收块调整。
+    evidence: 客户端按已知长度读取每个 64 KiB 窗口的 ACK，避免等待 64 KiB 接收缓冲填满；普通命令和长正文沿用原接收路径。相同固件交替上传 4 MiB，旧客户端约 0.49 MiB/s，新客户端约 0.68 MiB/s，提升 40%，CRC 与完整日志帧通过。344.1
+      MiB WIM 实测 256.4 秒，平均 1.34 MiB/s，CRC 回读通过。页面上传期间使用最多 16 次 / 4 ms 的应用事件服务，并在页面等待中每 1 ms 服务；上传结束或取消后恢复正常等待。USB 驱动二进制与 30 项源码锁保持不变。
     updated: '2026-11-03'
   efi_remote_boot:
     state: ok
-    evidence: boot <FSx:\path.efi> 在 ACK 完成后启动；33280 字节 ARM64 EFI 上传并启动返回实机通过；WinPE 镜像尚未准备。
+    evidence: 返回式 ARM64 EFI 已通过；当前候选精简 PE 的完整目录、360806696 字节 WIM CRC 和 NSH 核对通过。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。
     updated: '2026-11-03'
   acpi_runtime:
     state: partial
@@ -525,4 +528,8 @@ states:
   gyro_samples:
     state: todo
     evidence: ADSP MDT 与配置文件只读可达；ADSP/Sensor 服务及实时采样尚未完成。
+    updated: '2026-11-03'
+  winpe_ram_boot:
+    state: partial
+    evidence: ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。
     updated: '2026-11-03'

@@ -97,6 +97,7 @@ python cdc-console.py --shell --local-echo
 | `--command`, `-c` | 执行单条命令后退出 |
 | `--output`, `-o` | 日志、抓屏或 Shell 输出保存路径 |
 | `--shell` | 原始 UEFI Shell 终端 |
+| `--upload-dir` | 逐文件上传目录，保留相对路径，`--dest` 可指定目录前缀 |
 | `--local-echo` | 终端模式下回显本地按键 |
 
 ## 注意事项
@@ -111,7 +112,7 @@ python cdc-console.py --shell --local-echo
 
 CDC、USB Function 和本地文件系统共用同一块 RAM，不复制盘面。上传时独占 RAM，禁止切换或释放；MSC 接管时撤销本地挂载，归还后恢复本地只读访问。同容量 create 复用原盘，改变容量需要先 release。
 
-固件与客户端默认 CDC line coding 为 3,000,000 8N1，客户端可用 `--baud 115200` 覆盖。baud 配置本身不限制这条 USB 数据路径；文件接收按剩余窗口批量提交，单次最大 64 KiB，末窗补零最多 1023 字节，仍校验 CRC 并在断线时取消未提交替换。当前候选 1 MiB 上传与 CRC 回读实测 2.08 秒，约 491 KiB/s。
+固件与客户端默认 CDC line coding 为 3,000,000 8N1，客户端可用 `--baud 115200` 覆盖。baud 配置本身不限制这条 USB 数据路径；文件接收按剩余窗口批量提交，单次最大 64 KiB，末窗补零最多 1023 字节，仍校验 CRC 并在断线时取消未提交替换。客户端按已知长度读取每个 64 KiB 窗口的 ACK，避免等待 64 KiB 接收缓冲填满；普通命令和长正文沿用原接收路径。相同固件交替上传 4 MiB，旧客户端约 0.49 MiB/s，新客户端约 0.68 MiB/s，提升 40%，CRC 与完整日志帧通过。344.1 MiB WIM 实测 256.4 秒，平均 1.34 MiB/s，CRC 回读通过。页面上传期间使用最多 16 次 / 4 ms 的应用事件服务，并在页面等待中每 1 ms 服务；上传结束或取消后恢复正常等待。USB 驱动二进制与 30 项源码锁保持不变。
 
 正常停止后使用原厂 Stop/StartEx 流程，仅在 halt 未确认时尝试原厂初始化；停止失败保留 DMA 缓冲和 RAM。同模式 CDC 停止/重启与共享文件 CRC 回读已通过。
 
@@ -142,9 +143,12 @@ haptic level 500 75 direct
 
 ```bash
 python tools/cdc-control.py --port COM20 --upload path/to/file --dest EFI/BOOT/BOOTAA64.EFI
+python tools/cdc-control.py --port COM20 --upload-dir path/to/pe/media
 python tools/cdc-console.py --port COM20
 ```
 
 `FSx` 从 `shell map -r` 查找，不能固定盘符。`boot` 只接受单个映射 `.efi` 路径，ACK 后启动并使用真实控制台；客户端保持串口等待返回，断连或未观察到返回会明确报告。NSH 使用 `shell` 命令执行。FAT32 单文件最多 4294967295 字节；大盘不等于可存放大于 4 GiB 的单文件。8 GiB 上限按实际可用内存分配，不自动缩容。
 
-WinPE 镜像尚未准备；当前已验证 RAM 文件上传、NSH 与返回式 ARM64 EFI，引导 WinPE 和设备驱动适配仍待实机完成。
+已使用本地 ADK 28000.1 构建 344.1 MiB 的 ARM64 命令行 PE，普通 LZX 压缩；未添加桌面、PowerShell、.NET 或第三方驱动。SAN 默认 OfflineAll，关闭自动挂载。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。
+
+目录上传前检查全部文件路径与 FAT32 大小限制；每个文件独立校验 CRC 并提交，失败保留已完成文件。上传 PE 目录前先用 CDC 创建至少 512 MiB RAM，随后上传 media/ 内容，查询 FS 映射并执行 boot。

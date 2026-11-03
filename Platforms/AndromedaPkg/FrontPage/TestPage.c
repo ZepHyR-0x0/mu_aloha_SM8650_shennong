@@ -274,7 +274,7 @@ STATIC VOID TsDisplayTest (TEST_PAGE *Page, EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *K
       Dirty = TRUE;
     }
     FpServiceEvents ();
-    gBS->Stall (20000);
+    FpServiceDelay (20000);
   }
   ZeroMem (&Page->Tap, sizeof (Page->Tap));
 }
@@ -404,7 +404,7 @@ STATIC VOID TsHapticPage (TEST_PAGE *Page, EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *Ke
       Page->LastStatus=FpHapticStop();Dirty=TRUE;
       if(Action==6 && !EFI_ERROR(Page->LastStatus)) Exit=TRUE;
     }
-    FpServiceEvents();gBS->Stall(20000);
+    FpServiceEvents();FpServiceDelay(20000);
   }
   Page->HapticEnabled=FpHapticIsEnabled();
   ZeroMem(&Page->Tap,sizeof(Page->Tap));
@@ -547,7 +547,7 @@ STATIC VOID TsDevicePage (TEST_PAGE *Page, EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *Ke
       else if(First+Step<Count) First+=Step;
       Dirty=TRUE;
     } else if(Action==7) Exit=TRUE;
-    FpServiceEvents();gBS->Stall(20000);
+    FpServiceEvents();FpServiceDelay(20000);
   }
   FreePool(Radio);ZeroMem(&Page->Tap,sizeof(Page->Tap));
 }
@@ -806,7 +806,7 @@ FpTestPage (
     }
 
     FpServiceEvents ();
-    gBS->Stall (20000);
+    FpServiceDelay (20000);
   }
 
   Swm->ActivateWindow (Swm, Page->Window, FALSE);

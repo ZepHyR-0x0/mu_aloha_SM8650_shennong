@@ -31,7 +31,7 @@ python devtree/devtree_viz.py \
 python devtree/devtree_viz.py tree.yaml state.yaml --check --strict
 ```
 
-当前数据更新于 2026-11-03，119 个节点：CDC 共享 RAM 上传与 Shell 执行、震动、闪光灯、ACPI/SMC/TZ 与 RPMB 只读；未完成的无线、传感器与 USB 恢复项单独标记。HTML 自包含，状态数据不附带本地日志或检测报告。
+当前数据更新于 2026-11-03，120 个节点：CDC 提速、目录上传与 ARM64 精简 PE 启动尝试、震动、闪光灯、ACPI/SMC/TZ 与 RPMB 只读；未完成的无线、传感器与 USB 恢复项单独标记。HTML 自包含，状态数据不附带本地日志或检测报告。
 
 > 示例里 **工作状态** 与 **补丁状态** 分开记录：
 > 例如 UFS 是“外部 DEBUG 二进制 + 可用”，ClockDxe 是“4 字节指令补丁 + 可用”，

@@ -2008,7 +2008,7 @@ FpBootMenuShow (
     }
 
     if (TimeoutArmed && SecondsLeft == 0) break;
-    gBS->Stall (FP_BOOT_MENU_POLL_US);
+    FpServiceDelay (FP_BOOT_MENU_POLL_US);
   }
 
 Done:

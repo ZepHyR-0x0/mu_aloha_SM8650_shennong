@@ -1,6 +1,6 @@
 meta:
   title: Shennong (SM8650) UEFI 打通设备树
-  subtitle: CDC 提速 / 共享 RAM / MSC 回切 · 震动与闪光灯 · RPMB 只读 / ACPI / SMC/TZ
+  subtitle: CDC 上传提速 / 完整目录 · ARM64 精简 PE RAM 引导 · RPMB 只读 / ACPI / SMC/TZ
   platform: SM8650 / pineapple
   updated: '2026-11-03'
 groups:
@@ -1181,7 +1181,8 @@ nodes:
   deps:
   - ram_disk
   - usb_cdc
-  notes: 默认 CDC line coding 3,000,000；文件 RX 最大 64 KiB。1 MiB 上传实测 2.08 秒（491 KiB/s），CRC 正确；提速来自接收块调整。
+  notes: 客户端按已知长度读取每个 64 KiB 窗口的 ACK，避免等待 64 KiB 接收缓冲填满；普通命令和长正文沿用原接收路径。相同固件交替上传 4 MiB，旧客户端约 0.49 MiB/s，新客户端约 0.68 MiB/s，提升 40%，CRC 与完整日志帧通过。344.1
+    MiB WIM 实测 256.4 秒，平均 1.34 MiB/s，CRC 回读通过。页面上传期间使用最多 16 次 / 4 ms 的应用事件服务，并在页面等待中每 1 ms 服务；上传结束或取消后恢复正常等待。USB 驱动二进制与 30 项源码锁保持不变。
   driver: UsbRamTransfer / RamFileCore
 - id: efi_remote_boot
   name: CDC 启动映射 EFI 文件
@@ -1189,7 +1190,7 @@ nodes:
   deps:
   - dxe_core
   - usb_cdc
-  notes: boot <FSx:\path.efi> 在 ACK 完成后启动；33280 字节 ARM64 EFI 上传并启动返回实机通过；WinPE 镜像尚未准备。
+  notes: 返回式 ARM64 EFI 已通过；当前候选精简 PE 的完整目录、360806696 字节 WIM CRC 和 NSH 核对通过。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。
   driver: UsbRemoteCommands / FrontPage RemoteControl
 - id: acpi_runtime
   name: ACPI 表 / 关联 / 分段导出
@@ -1263,3 +1264,12 @@ nodes:
   - glink
   notes: ADSP MDT 与配置文件只读可达；ADSP/Sensor 服务及实时采样尚未完成。
   driver: PlatformTestLib / ADSP dependencies
+- id: winpe_ram_boot
+  name: ARM64 精简 PE / RAM 引导
+  group: core
+  deps:
+  - ram_upload
+  - efi_remote_boot
+  - acpi_runtime
+  driver: ARM64 ADK boot manager / winload.efi
+  notes: ADK 28000.1 / 344.1 MiB / LZX；磁盘默认离线并禁用自动挂载。精简 ARM64 PE 已上传并校验；boot 指令接受后 CDC 断开，尚无 PE 命令行启动成功的证据。

@@ -538,7 +538,7 @@ VOID FpFileBrowser (MS_SIMPLE_WINDOW_MANAGER_PROTOCOL *Swm, EFI_GRAPHICS_OUTPUT_
     }
     if (B->Selected < B->Top) B->Top = B->Selected;
     if (B->Selected >= B->Top + B->Rows) B->Top = B->Selected - B->Rows + 1;
-    gBS->Stall (20000);
+    FpServiceDelay (20000);
   }
   if (B->Directory != NULL) B->Directory->Close (B->Directory);
   Swm->ActivateWindow (Swm, B->Window, FALSE);

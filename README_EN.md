@@ -7,9 +7,9 @@
 
 **Project Mu** UEFI port for **Xiaomi 14 Pro** (shennong / SM8650): SM8650 overlay sources, one-click build scripts, bootable image, and device status visualization.
 
-- Development snapshot: 2026-11-03; DEBUG / ShennongNoSb; local changes remain uncommitted.
+- Development snapshot: 2026-11-03; DEBUG / ShennongNoSb.
 - Image: `Build/ShennongPkg/xiaomi-shennong.img`, 2,785,280 bytes
-  SHA256 `bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d`
+  SHA256 `c873fa957c63edeeba5501ac60e7f94b5b0b1878788d3249ed03f26455bae0b9`
 - Baseline: Project Mu Aloha `dev/update/mu202502`
 
 ## Screenshots
@@ -38,7 +38,9 @@ USB uses the unchanged stock hardware chain. Shared RAM MSC mounting, host file 
 
 The CDC client exposes `ramdisk create/info/hash/release`, `--upload ... --dest ...`, `shell <command>`, `boot <mapped.efi>`, `usb ramdisk <return-seconds>`, `test`, `haptic` and read only RPMB commands. CDC, local read only BlockIo and MSC share one RAM backing allocation. Resolve FS mappings through `shell map -r`.
 
-Firmware and client default to CDC line coding 3,000,000 8N1, overridable with `--baud`. File receives are submitted in batches up to 64 KiB; baud alone does not determine this USB path's throughput. The shipped candidate uploaded 1 MiB in 2.08 seconds (491 KiB/s), with verified CRC readback.
+The client supports `--upload-dir path/to/media` to preserve a complete boot file tree. A local ARM64 ADK 28000.1 minimal command-prompt PE (344.1 MiB, LZX, OfflineAll SAN policy, automount disabled) has passed WIM integrity, ARM64 loader, RAM upload, CRC and NSH checks. Its EFI boot command was accepted and CDC disconnected; a successful PE command prompt remains unverified.
+
+Firmware and client default to CDC line coding 3,000,000 8N1, overridable with `--baud`. File receives are submitted in batches up to 64 KiB; baud alone does not determine this USB path's throughput. Known-length ACK reads avoid waiting for a 64 KiB receive buffer after each upload window. Normal replies retain the established bulk-read path. Alternating 4 MiB uploads on the same firmware measured 0.49 MiB/s with the old client and 0.68 MiB/s with the new client (40% faster), with CRC and complete log framing verified. The 344.1 MiB WIM took 256.4s (1.34 MiB/s), with CRC readback. During uploads, custom pages service bounded bursts and slice page waits at 1 ms; normal waits resume after commit or cancellation. USB driver binaries and all 30 source-lock entries are unchanged.
 
 Queued and active switches exclude other switches and RAM changes. A switch drains the current control/BOT response for at most five seconds and releases its lock on success, disconnect, timeout or stop failure. Unconfirmed controller halt retains DMA buffers. A physical cable falling edge cancels the session and defers stock Stop/StartEx outside the pump by 200 ms. Ordinary bus reset does not take this path. This USB candidate and its stock hardware chain are held by the source lock.
 
