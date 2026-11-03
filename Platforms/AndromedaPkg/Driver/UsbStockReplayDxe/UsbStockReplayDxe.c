@@ -185,9 +185,62 @@ STATIC EFI_STATUS StockConsoleRead (CHAR8 *Data, UINTN Capacity, UINTN *Bytes);
 STATIC BOOLEAN mConsoleAttached;
 #include "UsbConsoleCore.h"
 #include "UsbFunctions.h"
+#include "UsbRamDisk.h"
+#include "UsbRamTransfer.h"
 #include "UsbRemoteCommands.h"
+STATIC EFI_STATUS StockModeReset (VOID);
+STATIC VOID StockModeDrain (VOID);
+#include "CdcRecoveryCore.h"
+STATIC CDC_RECOVERY mCdcRecovery;
 #include "StockFunctionClient.h"
 #include "UsbShellConsole.h"
+
+STATIC EFI_STATUS StockModeReset (VOID)
+{
+  EFI_STATUS Status;
+  UINT32 Dctl,Dsts;
+  if(StockCurrentTpl()!=TPL_APPLICATION || mPolling)return EFI_NOT_READY;
+  Dctl=MmioRead32(0xA60C704);Dsts=MmioRead32(0xA60C70C);
+  // DWC3 DCTL.RunStop=31 and DSTS.DevCtrlHlt=22. Native Stop can return
+  // success after its halt wait timed out; never release DMA on that alone.
+  if((Dctl&BIT31)!=0)return EFI_DEVICE_ERROR;
+  // A normally halted controller is ready for the stock Stop/Start flow.
+  // Replaying common-init here invalidates native state even when it succeeds.
+  if((Dsts&BIT22)!=0)return EFI_SUCCESS;
+  if(mBoardCore==NULL || mOriginalCoreInit==NULL || !StockTraceReadable(mBoardCore,0xC8))return EFI_NOT_READY;
+  StockSay("[USBRESET] native common init enter dctl=%08x dsts=%08x halted=%u\r\n",Dctl,Dsts,(Dsts&BIT22)!=0);
+  (VOID)BootLogSave("usb-native-reset-enter");
+  // Use the verified stock common-init entry with its full clock/PHY path.
+  // No init-event redispatch, native image patch or raw controller write.
+  Status=StockBoardCoreInit(mBoardCore,FALSE);
+  Dctl=MmioRead32(0xA60C704);Dsts=MmioRead32(0xA60C70C);
+  StockSay("[USBRESET] native common init -> %r dctl=%08x dsts=%08x halted=%u\r\n",
+    Status,Dctl,Dsts,(Dsts&BIT22)!=0);
+  (VOID)BootLogSave("usb-native-reset-result");
+  if(EFI_ERROR(Status))return Status;
+  return (Dctl&BIT31)==0 && (Dsts&BIT22)!=0?EFI_SUCCESS:EFI_DEVICE_ERROR;
+}
+
+STATIC VOID StockModeDrain (VOID)
+{
+  UINT64 Deadline;
+  UINT32 Polls=0;
+  if(mActiveMode!=USB_MODE_RAMDISK && mActiveMode!=USB_MODE_STORAGE)return;
+  if(mPoll==NULL || mPolling || StockCurrentTpl()!=TPL_APPLICATION)return;
+  mFunctions.Quiescing=TRUE;
+  Deadline=StockTraceNowMs()+5000;
+  StockSay("[USBMODE] drain current MSC transaction state=%u ctrl=%u\r\n",mFunctions.State,mFunctions.ControlState);
+  // Complete the current control/BOT response and stop queueing new CBWs.
+  // The waiting CBW receive can be cancelled by the stock lifecycle.
+  while(!UfMscQuiescent(&mFunctions) && !mFunctions.Failed &&
+        StockTraceNowMs()<Deadline && Polls++<512){
+    EFI_STATUS S=StockPoll(NULL);
+    if(S==EFI_SECURITY_VIOLATION)break;
+    gBS->Stall(1000);
+  }
+  StockSay("[USBMODE] drain complete=%u polls=%u state=%u ctrl=%u\r\n",
+    UfMscQuiescent(&mFunctions),Polls,mFunctions.State,mFunctions.ControlState);
+}
 
 STATIC EFI_STATUS EFIAPI
 StockPoll (IN APPLICATION_EVENT_SERVICE_PROTOCOL *This)
@@ -199,6 +252,7 @@ StockPoll (IN APPLICATION_EVENT_SERVICE_PROTOCOL *This)
   EFI_TPL Tpl;
   UINT32 Call;
   BOOLEAN NativeSucceeded;
+  BOOLEAN CableFell=FALSE;
   (VOID)This;
   if (mDevice == NULL || mPoll == NULL) return EFI_NOT_READY;
   if (mPolling) return EFI_ALREADY_STARTED;
@@ -237,6 +291,9 @@ StockPoll (IN APPLICATION_EVENT_SERVICE_PROTOCOL *This)
   if (Call <= 12) StockSay ("[USBSTOCK b319] t=%lu poll %u native-return %r event=%u size=%u\r\n",
                            StockTraceNowMs (), Call, Status, (UINT32)Message, (UINT32)Size);
   StockTraceEnd ();
+  if(!mUsbModeSwitchBusy && mActiveMode==USB_MODE_CDC && mTraceContext!=NULL &&
+     StockTraceReadable(mTraceContext+0x181,1))
+    CableFell=CrCableObserve(&mCdcRecovery,StockTraceNowMs(),mTraceContext[0x181]==1);
   if (!EFI_ERROR(Status)) Status=StockFunctionEvent(Message,Size,&Data);
   if (!EFI_ERROR(Status) && mFunctions.Mode==USB_MODE_CDC) Status=UfCdcNext(&mFunctions);
   // EFIUsbDevice.h transfers ownership of OEM event Context to its caller.
@@ -247,7 +304,15 @@ StockPoll (IN APPLICATION_EVENT_SERVICE_PROTOCOL *This)
   }
   Tpl = StockCurrentTpl ();
   mPolling = FALSE;
+  if(CableFell){
+    StockSay("[CDC] physical detach; cancel session, defer stock rearm outside pump\r\n");
+    mUsbConfigured=FALSE;
+    (VOID)UfConnected(&mFunctions,FALSE);
+    RamUploadService(FALSE,FALSE);
+    (VOID)BootLogSave("cdc-physical-detach");
+  }
   if (mUsbSavePending) { mUsbSavePending=FALSE;(VOID)BootLogSave("usb-configured-state"); }
+  StockMscSaveService(Status);
   if (Call == 13)
     // The stock attach path power-cycles the USB GDSC and re-inits the core
     // after StartEx already configured it, so the endpoint enable bitmap may be
@@ -264,11 +329,32 @@ StockPoll (IN APPLICATION_EVENT_SERVICE_PROTOCOL *This)
     StockReleasePump ();
     return EFI_ABORTED;
   }
+  if(Status==EFI_SECURITY_VIOLATION)(VOID)CrObserve(&mCdcRecovery,StockTraceNowMs(),FALSE,FALSE,FALSE,TRUE);
+  if(!mUsbModeSwitchBusy && mActiveMode==USB_MODE_CDC && !mRemote.Running && !mRemote.Reboot && !mRemote.ModeSwitch && !mConsoleAttached &&
+     CrObserve(&mCdcRecovery,StockTraceNowMs(),mTraceContext!=NULL && StockTraceReadable(mTraceContext+0x181,1) && mTraceContext[0x181]==1,
+               mUsbConfigured,mFunctions.Failed,FALSE)){
+    StockSay("[CDC] recovery attempt=%u configured=%u class_failed=%u\r\n",mCdcRecovery.Attempts,mUsbConfigured,mFunctions.Failed);
+    StockSessionReset();RamUploadService(FALSE,FALSE);
+    EFI_STATUS Recovery=StockSelectMode(NULL,USB_MODE_CDC);
+    StockSay("[CDC] recovery Stop/StartEx -> %r\r\n",Recovery);return Recovery;
+  }
   // Shell execution can itself service USB. Leave mPolling before calling the
   // application; its Running flag prevents recursive command dispatch.
-  if (Status!=EFI_SECURITY_VIOLATION && mActiveMode==USB_MODE_CDC) {
+  if (!mUsbModeSwitchBusy && Status!=EFI_SECURITY_VIOLATION && mActiveMode==USB_MODE_CDC) {
     StockCommandService(mFunctions.Connected,mFunctions.TxBusy);
     if (mRemote.HeaderBytes!=0) mFunctions.ReplyActive=TRUE;
+    if(mRemote.ModeSwitch && mRemote.AckSubmitted && !mFunctions.TxBusy && !mFunctions.CdcZlpPending){
+      UINT32 Mode=mRemote.SwitchMode,Seconds=mRemote.ReturnSeconds;StockCommandReset();
+      EFI_STATUS Switch=StockSelectMode(NULL,Mode);
+      if(!EFI_ERROR(Switch) && Mode==USB_MODE_RAMDISK && Seconds!=0)mCdcReturnAt=StockTraceNowMs()+(UINT64)Seconds*1000;
+      return Switch;
+    }
+  }
+  if(mCdcReturnAt!=0 && StockTraceNowMs()>=mCdcReturnAt){
+    StockSay("[USBBOT] timed return cbw=%u op=%02x state=%u rx=%u tx=%u failed=%u\r\n",
+      (UINT32)mBotCommands,mMscLastOp,mFunctions.State,mFunctions.RxBusy,mFunctions.TxBusy,mFunctions.Failed);
+    (VOID)BootLogSave("usb-msc-timed-return");
+    mCdcReturnAt=0;return StockSelectMode(NULL,USB_MODE_CDC);
   }
   if (EFI_ERROR (Status) && Status != EFI_NOT_READY) {
     if (mErrors<4) mErrors++;
@@ -792,8 +878,8 @@ StockTest (IN USB_BRINGUP_PROTOCOL *This)
   return Status;
 }
 
-STATIC USB_BRINGUP_PROTOCOL mBringup = { 6, StockEnableNative, NULL, NULL, StockSelectMode, StockGetMode,
-  StockSetRamSize,StockGetRamSize,StockSetShellConsole,StockSetRemoteExecutor };
+STATIC USB_BRINGUP_PROTOCOL mBringup = { 8, StockEnableNative, NULL, NULL, StockSelectMode, StockGetMode,
+  StockSetRamSize,StockGetRamSize,StockSetShellConsole,StockSetRemoteExecutor,StockCreateRamDisk,StockGetRamInfo,StockGetSwitchBusy };
 STATIC APPLICATION_EVENT_SERVICE_PROTOCOL mApplicationService = { 1, NULL, StockPoll };
 
 // DT names stream 0x40. Its effective configuration and DMA behaviour are

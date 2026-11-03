@@ -1,4 +1,7 @@
 [LibraryClasses.common]
+  BaseUcs2Utf8Lib|Ext4Pkg/Library/BaseUcs2Utf8Lib/BaseUcs2Utf8Lib.inf
+  PlatformTestLib|AndromedaPkg/Library/PlatformTestLib/PlatformTestLib.inf
+  PmicHapticsLib|AndromedaPkg/Library/PmicHapticsLib/PmicHapticsLib.inf
   #
   # Libraries to support Shell
   #
@@ -191,6 +194,8 @@
   # Application that presents and manages FrontPage.
   #
   AndromedaPkg/FrontPage/FrontPage.inf
+  AndromedaPkg/Application/HapticTest/HapticTest.inf
+  AndromedaPkg/Application/PlatformTest/PlatformTest.inf
   # Surface Boot Manager (Menu) application
   #
   # Application that presents & manages the Boot Menu Setup on Front Page.

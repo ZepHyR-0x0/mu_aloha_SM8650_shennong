@@ -38,6 +38,10 @@
   Health.c
   PowerStatus.c
   PowerStatusData.c
+  HapticControl.c
+  HapticControl.h
+  HapticSlider.h
+  TestPage.c
   FileBrowser.c
   Reboot.c
   ../Library/WcdUsbLib/WcdUsbLib.c
@@ -56,8 +60,11 @@
   AndromedaPkg/AndromedaPkg.dec
 
 [LibraryClasses]
+  PlatformTestLib
+  PmicHapticsLib
   BaseLib
   BaseMemoryLib
+  DevicePathLib
   CacheMaintenanceLib
   IoLib
   DebugLib
@@ -103,6 +110,9 @@
   gEfiSimpleTextOutProtocolGuid
   gEfiHiiFontProtocolGuid
   gEfiBlockIoProtocolGuid
+  gEfiDiskIoProtocolGuid
+  gEfiDriverBindingProtocolGuid
+  gEfiLoadedImageProtocolGuid
   gEfiPartitionInfoProtocolGuid
   gEfiSimpleFileSystemProtocolGuid
   gEfiUsbDeviceProtocolGuid                     ## CONSUMES

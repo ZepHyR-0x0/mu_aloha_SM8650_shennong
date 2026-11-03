@@ -1,16 +1,49 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 #include "../ReadOnlyStorageDxe/ReadOnlyStorage.h"
-#include "UsbRamDisk.h"
 #include "UsbFunctionDescriptors.h"
 STATIC USB_FUNCTIONS mFunctions;
 STATIC UINT32 mActiveMode, mDesiredMode=USB_MODE_NATIVE;
+STATIC UINT64 mCdcReturnAt;
 STATIC BOOLEAN mUsbConfigured, mUsbSavePending, mStopFailed;
 STATIC BOOLEAN mResetSeen;
 STATIC UINT8 mClearSeen;
 STATIC UINT32 mSpeedSeen;
 STATIC UINTN mClassMessages;
+STATIC UINTN mBotCommands;
+STATIC UINT32 mMscSaves;
+STATIC UINT64 mMscSaveAt;
+STATIC BOOLEAN mMscSavePending, mMscFaultSaved;
+STATIC UINT8 mMscLastOp;
 STATIC BOOLEAN mRawCompletionValid;
 STATIC USB_DEVICE_TRANSFER_OUTCOME mRawCompletion;
+STATIC BOOLEAN mRawSetupValid;
+STATIC EFI_USB_DEVICE_REQUEST mRawSetup;
+
+// Snapshot only outside HandleEvent and native trace hooks. Keep the first
+// command outcomes, then sparse progress; reserve a separate save for failure.
+STATIC VOID StockMscSaveService (EFI_STATUS Status)
+{
+  UINT64 Now;
+  BOOLEAN Fault;
+  if (mActiveMode!=USB_MODE_RAMDISK && mActiveMode!=USB_MODE_STORAGE) return;
+  if (mPolling || StockCurrentTpl()!=TPL_APPLICATION) return;
+  Now=StockTraceNowMs();
+  Fault=EFI_ERROR(Status) && Status!=EFI_NOT_READY;
+  if (Fault && !mMscFaultSaved) {
+    mMscFaultSaved=TRUE;
+    StockSay("[USBBOT] fault op=%02x status=%r state=%u ctrl=%u rx=%u tx=%u residue=%u reset=%u\r\n",
+      mMscLastOp,Status,mFunctions.State,mFunctions.ControlState,mFunctions.RxBusy,mFunctions.TxBusy,
+      mFunctions.Residue,mFunctions.NeedReset);
+    (VOID)BootLogSave("usb-msc-fault");
+  } else if (mMscSavePending && mMscSaves<16 && Now>=mMscSaveAt) {
+    mMscSavePending=FALSE;mMscSaves++;
+    mMscSaveAt=Now+(mMscSaves<8?250:2000);
+    StockSay("[USBBOT] progress cbw=%u op=%02x state=%u ctrl=%u rx=%u tx=%u residue=%u reset=%u\r\n",
+      (UINT32)mBotCommands,mMscLastOp,mFunctions.State,mFunctions.ControlState,mFunctions.RxBusy,
+      mFunctions.TxBusy,mFunctions.Residue,mFunctions.NeedReset);
+    (VOID)BootLogSave("usb-msc-progress");
+  }
+}
 
 STATIC BOOLEAN StockFunctionMessage (EFI_USBFN_MESSAGE Message, UINTN Size, EFI_USBFN_MESSAGE_PAYLOAD *P)
 {
@@ -19,6 +52,17 @@ STATIC BOOLEAN StockFunctionMessage (EFI_USBFN_MESSAGE Message, UINTN Size, EFI_
   if (Message==EfiUsbMsgSetupPacket && Size>=sizeof(P->udr) &&
       P->udr.RequestType==2 && P->udr.Request==1 && P->udr.Value==0 && P->udr.Length==0)
     mClearSeen=(UINT8)P->udr.Index;
+  // After configuration the native standard descriptor handler can both
+  // reply and delegate the same request. Claim supported repeated descriptors
+  // after Usbfn establishes EP0 ownership, before that duplicate upper reply.
+  if(Message==EfiUsbMsgSetupPacket && Size>=sizeof(P->udr) && mUsbConfigured &&
+     mFunctions.Mode!=0 && P->udr.RequestType==0x80 && P->udr.Request==6 && P->udr.Length!=0 &&
+     mFunctions.Descriptor!=NULL){
+    CONST UINT8 *Descriptor=NULL;UINTN DescriptorBytes=0;
+    if(mFunctions.Descriptor(P->udr.Value,P->udr.Index,&Descriptor,&DescriptorBytes) && Descriptor!=NULL && DescriptorBytes<=512){
+      mRawSetup=P->udr;mRawSetupValid=TRUE;return TRUE;
+    }
+  }
   if ((Message==EfiUsbMsgEndpointStatusChangedRx || Message==EfiUsbMsgEndpointStatusChangedTx) &&
       Size>=sizeof(P->utr) && mFunctions.Mode!=0 && P->utr.Buffer!=NULL &&
       ((P->utr.Buffer==mFunctions.Rx && P->utr.EndpointIndex==1 && P->utr.Direction==EfiUsbEndpointDirectionDeviceRx) ||
@@ -56,6 +100,20 @@ STATIC EFI_STATUS StockFunctionStall (UINT8 Ep, BOOLEAN Halt)
 { return mDevice->SetEndpointStallState(Ep,Halt); }
 STATIC EFI_STATUS StockFunctionAbort (UINT8 Ep)
 { return mDevice->AbortXfer(Ep); }
+STATIC BOOLEAN StockFunctionDescriptor(UINT16 Value,UINT16 Index,CONST UINT8 **Data,UINTN *Bytes)
+{
+  BOOLEAN Super=mFunctions.PacketSize==1024;
+  if(Index!=0 || (Value&255)!=0)return FALSE;
+  switch(Value>>8){
+    case 1:*Data=(CONST UINT8 *)(Super?&mSsDevice:&mHsDevice);*Bytes=sizeof(mHsDevice);break;
+    case 2:*Data=(CONST UINT8 *)(Super?mSsDescriptors[0]:mHsDescriptors[0]);*Bytes=(*Data)[2]|((UINTN)(*Data)[3]<<8);break;
+    case 3:*Data=mLanguage;*Bytes=sizeof(mLanguage);break;
+    case 6:*Data=(CONST UINT8 *)&mQualifier;*Bytes=sizeof(mQualifier);break;
+    case 15:if(!Super)return FALSE;*Data=mBos;*Bytes=sizeof(mBos);break;
+    default:return FALSE;
+  }
+  return TRUE;
+}
 STATIC EFI_STATUS StockFunctionCreate (VOID)
 {
   EFI_STATUS Status;
@@ -81,9 +139,11 @@ STATIC EFI_STATUS StockFunctionCreate (VOID)
   mFunctions.Send=StockFunctionSend;mFunctions.Stall=StockFunctionStall;mFunctions.Abort=StockFunctionAbort;
   mFunctions.ReadLog=BootLogRead;
   mFunctions.ReadConsole=StockConsoleRead;mFunctions.ConsoleInput=StockConsoleInput;
-  mFunctions.CommandInput=StockCommandInput;mFunctions.ReadReply=StockCommandRead;mFunctions.ResetReply=StockCommandReset;
+  mFunctions.CommandInput=StockCommandInput;mFunctions.ReadReply=StockCommandRead;mFunctions.ResetReply=StockSessionReset;
+  mFunctions.BlobInput=StockRamInput;mFunctions.BlobReceiveBytes=StockRamReceiveBytes;
+  mFunctions.Descriptor=StockFunctionDescriptor;
   if (mDesiredMode==USB_MODE_RAMDISK && mFunctions.Disk==mRamDisk && mRamUsbOwned) mFunctions.WritableDisk=mRamDisk;
-  mFunctions.LineCoding[0]=0;mFunctions.LineCoding[1]=0xC2;mFunctions.LineCoding[2]=1;
+  mFunctions.LineCoding[0]=0xC0;mFunctions.LineCoding[1]=0xC6;mFunctions.LineCoding[2]=0x2D;
   mFunctions.LineCoding[3]=mFunctions.LineCoding[4]=mFunctions.LineCoding[5]=0;mFunctions.LineCoding[6]=8;
   if (mDesiredMode==USB_MODE_CDC) {
     mFunctions.LogCapacity=BOOT_LOG_MAX_BYTES;mFunctions.Log=AllocatePool(BOOT_LOG_MAX_BYTES);
@@ -94,8 +154,8 @@ STATIC EFI_STATUS StockFunctionCreate (VOID)
 STATIC VOID StockFunctionFree (VOID)
 {
   UINT8 *Buffers[4]={mFunctions.Rx,mFunctions.Tx,mFunctions.Control,mFunctions.Notify};UINTN I;
-  // Only called after native Stop succeeded: DMA cannot still own these.
-  StockCommandReset();
+  // Only called after native Stop plus common-init/halt verification.
+  StockSessionReset();
   for (I=0;I<ARRAY_SIZE(Buffers);I++) if (Buffers[I]!=NULL) (VOID)mDevice->FreeTransferBuffer(Buffers[I]);
   if (mFunctions.Disk!=NULL && mFunctions.Disk!=mRamDisk) FreePool((VOID *)mFunctions.Disk);
   if (mFunctions.Log!=NULL) FreePool(mFunctions.Log);
@@ -108,6 +168,11 @@ STATIC EFI_STATUS StockFunctionEvent (USB_DEVICE_EVENT Event, UINTN Bytes, USB_D
   UINT16 Packet;
   if (mResetSeen) {
     mResetSeen=FALSE;mUsbConfigured=FALSE;
+    mRawSetupValid=FALSE;
+    if(mActiveMode==USB_MODE_RAMDISK || mActiveMode==USB_MODE_STORAGE){
+      StockSay("[USBBOT] bus reset/detach cbw=%u op=%02x state=%u\r\n",(UINT32)mBotCommands,mMscLastOp,mFunctions.State);
+      mMscSavePending=TRUE;
+    }
     if (mFunctions.Mode!=0) (VOID)UfConnected(&mFunctions,FALSE);
   }
   if (mSpeedSeen!=0 && mTraceFn!=NULL) {
@@ -122,6 +187,12 @@ STATIC EFI_STATUS StockFunctionEvent (USB_DEVICE_EVENT Event, UINTN Bytes, USB_D
     StockSay("[USBMODE b327] mode=%u configured=%u\r\n",mActiveMode,mUsbConfigured);
   }
   if (mFunctions.Mode!=0 && !EFI_ERROR(Status)) {
+    if(mRawSetupValid){
+      EFI_USB_DEVICE_REQUEST Request=mRawSetup;mRawSetupValid=FALSE;
+      StockSay("[USBCLASS] owned descriptor value=%04x length=%u\r\n",Request.Value,Request.Length);
+      Status=UfSetup(&mFunctions,&Request);
+      if(mActiveMode==USB_MODE_RAMDISK || mActiveMode==USB_MODE_STORAGE)mMscSavePending=TRUE;
+    }
     if (Event==UsbDeviceEventOemEvent && Bytes>=sizeof(Data->OemData) &&
         CompareGuid(&Data->OemData.DataGuid,&SetupGuid) && Data->OemData.Size==sizeof(EFI_USB_DEVICE_REQUEST) &&
         StockTraceReadable(Data->OemData.Context,sizeof(EFI_USB_DEVICE_REQUEST))) {
@@ -130,8 +201,32 @@ STATIC EFI_STATUS StockFunctionEvent (USB_DEVICE_EVENT Event, UINTN Bytes, USB_D
       if (mClassMessages++<24) StockSay("[USBCLASS b327] mode=%u type=%02x req=%02x length=%u\r\n",
         mActiveMode,Request.RequestType,Request.Request,Request.Length);
       Status=UfSetup(&mFunctions,&Request);
+      if(mActiveMode==USB_MODE_RAMDISK || mActiveMode==USB_MODE_STORAGE){
+        StockSay("[USBBOT] setup type=%02x req=%02x value=%04x index=%04x length=%u -> %r\r\n",
+          Request.RequestType,Request.Request,Request.Value,Request.Index,Request.Length,Status);
+        mMscSavePending=TRUE;
+      }
+      if(!EFI_ERROR(Status) && Request.RequestType==2 && Request.Request==1 && Request.Value==0 && Request.Length==0 &&
+         (Request.Index==1 || Request.Index==0x81))mClearSeen=0;
     } else if (Event==UsbDeviceEventTransferNotification && Bytes>=sizeof(Data->TransferOutcome))
       Status=UfComplete(&mFunctions,&Data->TransferOutcome);
+    if(mRawCompletionValid && (mFunctions.Mode==USB_MODE_RAMDISK || mFunctions.Mode==USB_MODE_STORAGE)){
+      if(mRawCompletion.EndpointIndex==1 && mFunctions.State==UfAwaitCbw &&
+         mRawCompletion.Status==UsbDeviceTransferStatusCompleteOK && mRawCompletion.BytesCompleted==31){
+        mBotCommands++;mMscLastOp=mFunctions.Rx[15];mMscSavePending=TRUE;
+        if(mBotCommands<=64)StockSay("[USBBOT] cbw=%u sig=%08x tag=%08x op=%02x cdb_len=%u host=%u flags=%02x\r\n",
+          (UINT32)mBotCommands,UfLe32(mFunctions.Rx),UfLe32(mFunctions.Rx+4),mMscLastOp,
+          mFunctions.Rx[14],UfLe32(mFunctions.Rx+8),mFunctions.Rx[12]);
+        if(mBotCommands<=64)StockSay("[USBBOT] cdb=%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\r\n",
+          mFunctions.Rx[15],mFunctions.Rx[16],mFunctions.Rx[17],mFunctions.Rx[18],mFunctions.Rx[19],
+          mFunctions.Rx[20],mFunctions.Rx[21],mFunctions.Rx[22],mFunctions.Rx[23],mFunctions.Rx[24]);
+      }
+      if(mRawCompletion.Status!=UsbDeviceTransferStatusCompleteOK && mRawCompletion.Status!=UsbDeviceTransferStatusActive){
+        StockSay("[USBBOT] completion ep=%02x status=%u bytes=%u state=%u queued=%u/%u\r\n",
+          mRawCompletion.EndpointIndex,(UINT32)mRawCompletion.Status,(UINT32)mRawCompletion.BytesCompleted,
+          mFunctions.State,mFunctions.RxQueued,mFunctions.Queued);mMscSavePending=TRUE;
+      }
+    }
     if (!EFI_ERROR(Status) && mRawCompletionValid &&
         !(Event==UsbDeviceEventTransferNotification && Bytes>=sizeof(Data->TransferOutcome) &&
           Data->TransferOutcome.EndpointIndex==mRawCompletion.EndpointIndex && Data->TransferOutcome.DataBuffer==mRawCompletion.DataBuffer))
@@ -149,8 +244,10 @@ STATIC EFI_STATUS EFIAPI StockGetMode (USB_BRINGUP_PROTOCOL *This, UINT32 *Mode,
   (VOID)This;if (Mode==NULL || Configured==NULL) return EFI_INVALID_PARAMETER;
   *Mode=mActiveMode;*Configured=mUsbConfigured;return EFI_SUCCESS;
 }
+STATIC BOOLEAN EFIAPI StockGetSwitchBusy(USB_BRINGUP_PROTOCOL *This)
+{ (VOID)This;return mUsbModeSwitchBusy || mUsbModeSwitchQueued; }
 STATIC EFI_STATUS EFIAPI StockTest (USB_BRINGUP_PROTOCOL *This);
-STATIC EFI_STATUS EFIAPI StockSelectMode (USB_BRINGUP_PROTOCOL *This, UINT32 Mode)
+STATIC EFI_STATUS EFIAPI StockSelectModeInternal (USB_BRINGUP_PROTOCOL *This, UINT32 Mode)
 {
   EFI_STATUS Status;
   EFI_GUID PolicyGuid=READ_ONLY_STORAGE_GUID;
@@ -172,6 +269,8 @@ STATIC EFI_STATUS EFIAPI StockSelectMode (USB_BRINGUP_PROTOCOL *This, UINT32 Mod
     StockSay ("[USBMODE b337] reject: event pump still running\r\n");
     return EFI_INVALID_PARAMETER;
   }
+  if(mRamMutating){StockSay("[CDCRAM] mode change refused during upload\r\n");return EFI_ACCESS_DENIED;}
+  mCdcReturnAt=0;
   if (mConsoleAttached) {
     // The CDC Shell merges its console with gST->ConIn/ConOut. When the GUI
     // asks for a different mode the old CDC console must be detached first,
@@ -190,6 +289,7 @@ STATIC EFI_STATUS EFIAPI StockSelectMode (USB_BRINGUP_PROTOCOL *This, UINT32 Mod
     StockSay ("[USBMODE b337] previous stop failed, retrying\r\n");
     if ((mDevice != NULL) && (mDevice->Stop != NULL)) {
       EFI_STATUS  RetryStatus = mDevice->Stop ();
+      if(!EFI_ERROR(RetryStatus))RetryStatus=StockModeReset();
       StockSay ("[USBMODE b337] stop retry -> %r\r\n", RetryStatus);
       if (EFI_ERROR (RetryStatus)) {
         return EFI_DEVICE_ERROR;
@@ -241,18 +341,28 @@ STATIC EFI_STATUS EFIAPI StockSelectMode (USB_BRINGUP_PROTOCOL *This, UINT32 Mod
     (UINT32)mAttempted, (UINT64)(UINTN)mDevice, mActiveMode);
 
   if (mAttempted && mDevice!=NULL) {
+    StockModeDrain();
     StockReleasePump();
     // Abort client-owned transfers before stopping the native controller.
     if (mFunctions.Mode!=0) {
-      (VOID)mDevice->AbortXfer(0);(VOID)mDevice->AbortXfer(0x80);
-      (VOID)mDevice->AbortXfer(1);(VOID)mDevice->AbortXfer(0x81);
-      if (mFunctions.Mode==USB_MODE_CDC) (VOID)mDevice->AbortXfer(0x82);
+      if(mFunctions.ControlState!=UfControlIdle)(VOID)mDevice->AbortXfer(mFunctions.ControlEp);
+      if(mFunctions.RxBusy)(VOID)mDevice->AbortXfer(1);
+      if(mFunctions.TxBusy)(VOID)mDevice->AbortXfer(0x81);
+      if(mFunctions.NotifyBusy)(VOID)mDevice->AbortXfer(0x82);
     }
     Status=mDevice->Stop();
     StockSay("[USBMODE b327] native stop -> %r\r\n",Status);
+    StockSay("[USBMODE] after Stop dctl=%08x dsts=%08x dale=%08x\r\n",
+      MmioRead32(0xA60C704),MmioRead32(0xA60C70C),MmioRead32(0xA60C720));
+    (VOID)BootLogSave("usb-native-stop-result");
     if (EFI_ERROR(Status)) {
       // Do not free a buffer if the device might still DMA into it.
       mStopFailed=TRUE;if (Snapshot!=NULL) FreePool(Snapshot);return Status;
+    }
+    Status=StockModeReset();
+    if(EFI_ERROR(Status)){
+      StockSay("[USBRESET] DMA buffers retained; reinitialization/halt unverified -> %r\r\n",Status);
+      mStopFailed=TRUE;if(Snapshot!=NULL)FreePool(Snapshot);return Status;
     }
     StockFunctionFree();
     // Native Stop clears RunStop and the cached cable state. Keep that
@@ -274,7 +384,9 @@ STATIC EFI_STATUS EFIAPI StockSelectMode (USB_BRINGUP_PROTOCOL *This, UINT32 Mod
   mRamUsbOwned=FALSE;
   mAttempted=FALSE;mDevice=NULL;mActiveMode=USB_MODE_DISABLED;mUsbConfigured=FALSE;
   mResetSeen=FALSE;mClearSeen=0;mSpeedSeen=0;mUsbSavePending=FALSE;mRawCompletionValid=FALSE;
-  mErrors=mEvents=mPollCalls=0;mClassMessages=0;
+  mRawSetupValid=FALSE;
+  mErrors=mEvents=mPollCalls=0;mClassMessages=mBotCommands=0;
+  mMscSaves=0;mMscSaveAt=0;mMscSavePending=mMscFaultSaved=FALSE;mMscLastOp=0;
   if (Mode==USB_MODE_DISABLED) {
     if (Snapshot!=NULL) FreePool(Snapshot);
     if (Release) {
@@ -289,11 +401,12 @@ STATIC EFI_STATUS EFIAPI StockSelectMode (USB_BRINGUP_PROTOCOL *This, UINT32 Mod
   mDesiredMode=Mode;mFunctions.Disk=Snapshot;mFunctions.DiskBytes=Bytes;
   StockFunctionDescriptors(Mode);
   Status=StockTest(This);
-  StockSay("[USBMODE b327] selected mode=%u snapshot=%u -> %r\r\n",Mode,(UINT32)Bytes,Status);
+  StockSay("[USBMODE b327] selected mode=%u snapshot=%lu -> %r\r\n",Mode,(UINT64)Bytes,Status);
   if (EFI_ERROR(Status)) {
     StockReleasePump();
     if (mDevice!=NULL && StockCurrentTpl()==TPL_APPLICATION && mDevice->Stop!=NULL) {
       EFI_STATUS StopStatus=mDevice->Stop();
+      if(!EFI_ERROR(StopStatus))StopStatus=StockModeReset();
       if (!EFI_ERROR(StopStatus)) { StockFunctionFree();mAttempted=FALSE;mDevice=NULL; }
       else mStopFailed=TRUE;
     } else if (mDevice==NULL) {
@@ -304,6 +417,24 @@ STATIC EFI_STATUS EFIAPI StockSelectMode (USB_BRINGUP_PROTOCOL *This, UINT32 Mod
     if (!mStopFailed) { mRamUsbOwned=FALSE;(VOID)RamPublish(); }
   }
   (VOID)BootLogSave("usb-mode-result");
+  return Status;
+}
+STATIC EFI_STATUS EFIAPI StockSelectMode (USB_BRINGUP_PROTOCOL *This, UINT32 Mode)
+{
+  EFI_STATUS Status;
+  if(StockGetSwitchBusy(This)){
+    StockSay("[USBMODE] reject overlapping switch -> Already Started\r\n");return EFI_ALREADY_STARTED;
+  }
+  if(StockCurrentTpl()!=TPL_APPLICATION || mPolling)return EFI_NOT_READY;
+  // All mode changes run on the application event loop. Guard re-entry until
+  // the inner function has completed every success, timeout or error exit.
+  mUsbModeSwitchBusy=TRUE;
+  Status=StockSelectModeInternal(This,Mode);
+  mUsbModeSwitchBusy=FALSE;
+  // Stop resets the native cached cable state. Do not interpret that
+  // software transition as another physical unplug on the next poll.
+  mCdcRecovery.CableKnown=FALSE;mCdcRecovery.Detached=FALSE;
+  StockSay("[USBMODE] switch lock released status=%r stop_failed=%u\r\n",Status,mStopFailed);
   return Status;
 }
 STATIC EFI_STATUS EFIAPI StockEnableNative (USB_BRINGUP_PROTOCOL *This)

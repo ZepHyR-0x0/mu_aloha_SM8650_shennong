@@ -27,10 +27,8 @@
   FLASH_DEFINITION               = $(PACKAGE_NAME)/$(PLATFORM_NAME).fdf
   SECURE_BOOT                    = 0
   USE_PHYSICAL_TIMER             = 0
-!ifndef USB_STOCK_CHAIN
-  DEFINE USB_STOCK_CHAIN = 0
-!endif
-  DEFINE SHENNONG_USB_FAULT_TRACE = $(USB_STOCK_CHAIN)
+  # USB is locked to the recovered stock chain.
+  DEFINE SHENNONG_USB_FAULT_TRACE = 1
 
   USE_SCREEN_FOR_SERIAL_OUTPUT    = 1  # DEBUG: framebuffer console
   USE_UART_GENI_FOR_SERIAL_OUTPUT = 0

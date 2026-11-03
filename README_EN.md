@@ -5,12 +5,12 @@
 > **When borrowing from or using this project, please credit the source prominently in your own project.**
 > See [Project Usage](#project-usage) for details.
 
-**Project Mu** UEFI port for **Xiaomi 14 Pro** (shennong / SM8650): SM8650 overlay sources, one-click build scripts, bootable image, and test suite.
+**Project Mu** UEFI port for **Xiaomi 14 Pro** (shennong / SM8650): SM8650 overlay sources, one-click build scripts, bootable image, and device status visualization.
 
-- Snapshot: branch `pre-touch`, HEAD `a00ac7d7` (b341, 2026-11-02)
-- Image: `Build/ShennongPkg/xiaomi-shennong.img`, 2,711,552 bytes
-  SHA256 `b6493bc626f7cde22f0381ab8211b94720d4598541bd47e8e8fc64f56832f501`
-- Baseline: Project Mu Aloha `main`
+- Development snapshot: 2026-11-03; DEBUG / ShennongNoSb; local changes remain uncommitted.
+- Image: `Build/ShennongPkg/xiaomi-shennong.img`, 2,785,280 bytes
+  SHA256 `bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d`
+- Baseline: Project Mu Aloha `dev/update/mu202502`
 
 ## Screenshots
 
@@ -30,42 +30,19 @@
 
 ## Current Status
 
-**Display** — Working
-- 1440x3200 panel lit, frame-buffer console readable (sole output channel when no UART)
-- Graphical UI (FrontPage) accessible: main menu, file browser, power status, USB, exit page
-- Boot Menu shows first; auto-enters GUI after 5 s; key press or touch cancels the countdown
+Display, touch, CDC commands, exact 64 / 128 MiB shared RAM allocations, file upload with CRC readback, NSH execution and a returning ARM64 EFI launch have passed on the device. RAM supports requests from 64 to 8192 MiB; 8 GiB allocation has not been validated on hardware. FAT32 files are limited to 4294967295 bytes.
 
-**Touch** — Working
-- Full-screen touch input; GUI taps, bi-directional list scrolling, and on-screen keyboard (OSK) all functional
-- Root cause was L12/IOVDD not being powered in UEFI; once powered, the chip responded immediately
+Vibration and flash light have user confirmation. TEST includes a dedicated haptic page with duration and intensity sliders, hardware queries and device lists. RPMB access is read only, with raw response checks and unchanged counters; MAC authentication is unavailable. ACPI table export, links and checksums have passed, while WinPE platform adaptation and secure application business functions remain incomplete.
 
-**USB Device Mode (USB-CDC / Mass Storage)** — Working
-- Host identifies device as `18D1:D00D` / Android Bootloader Interface; standard enumeration complete
-- Four switchable modes: read-only logfs snapshot (USB mass storage), CDC serial (Python console), 512 MiB RAM disk, off
-- On-device: COM20 interactive; Shell commands, log reads (174 KB / 1.5 s), full-screen screenshots (13 s) all work
-- **Not** fastboot: no command interpreter, cannot flash
+USB uses the unchanged stock hardware chain. Shared RAM MSC mounting, host file hashes and timed return to CDC passed. Repeated physical CDC unplug/replug, including interruption of log reception, restored enumeration and preserved a test file; a subsequent switch confirmed lock release. Mid-replacement-upload unplug has not yet been captured on this candidate. WiFi/Bluetooth providers, GPS fixes, live sensor samples and brightness control remain incomplete.
 
-**Storage (UFS)** — Working
-- 6 LUNs, 123 partitions, matching the stock GPT one-to-one
-- Read-only: can browse FAT partitions and read files; write/erase always refused
+The CDC client exposes `ramdisk create/info/hash/release`, `--upload ... --dest ...`, `shell <command>`, `boot <mapped.efi>`, `usb ramdisk <return-seconds>`, `test`, `haptic` and read only RPMB commands. CDC, local read only BlockIo and MSC share one RAM backing allocation. Resolve FS mappings through `shell map -r`.
 
-**TZ / SMC** — Partial
-- Normal SMC calls respond correctly; ShmBridge established
-- Secure services not fully functional: feature TA signature verification fails (`ret=12`); Keymaster only reaches the loader
+Firmware and client default to CDC line coding 3,000,000 8N1, overridable with `--baud`. File receives are submitted in batches up to 64 KiB; baud alone does not determine this USB path's throughput. The shipped candidate uploaded 1 MiB in 2.08 seconds (491 KiB/s), with verified CRC readback.
 
-**Charging / Battery** — Partial
-- Can read charger-connection state, battery-present flag, and interface-reported voltage
-- **Cannot** control charging; does **not** show battery percentage or temperature (data source untrusted, no fake values)
+Queued and active switches exclude other switches and RAM changes. A switch drains the current control/BOT response for at most five seconds and releases its lock on success, disconnect, timeout or stop failure. Unconfirmed controller halt retains DMA buffers. A physical cable falling edge cancels the session and defers stock Stop/StartEx outside the pump by 200 ms. Ordinary bus reset does not take this path. This USB candidate and its stock hardware chain are held by the source lock.
 
-**GPU** — Not implemented
-- No 3D in UEFI phase; display uses 2D frame buffer, no GPU driver needed
-
-**Audio** — Not implemented
-- Speaker requires LPASS/TDM1 + amplifier chain; no playback stack on UEFI side
-
-**Camera / Modem / PCIe / WLAN / NFC** — Not implemented
-
-
+The repository contains production sources and product documentation. Local logs, diagnostic reports and test harnesses stay in the development workspace.
 
 ## One-Click Build
 

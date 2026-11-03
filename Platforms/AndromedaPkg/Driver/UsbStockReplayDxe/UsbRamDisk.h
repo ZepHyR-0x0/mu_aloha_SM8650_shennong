@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// Private, volatile FAT32 superfloppy. USB is the only writable view. Local
+// Private, volatile FAT32 superfloppy. USB and the bounded upload writer share
+// the same allocation. Local
 // BlockIo is read-only and removed before USB takes ownership of the volume.
 // No storage-guard exemption and no UFS/DiskIo writer are involved.
 #include <Protocol/BlockIo.h>
@@ -11,6 +12,8 @@ STATIC UINTN mRamBytes;
 STATIC UINT8 *mRamDisk;
 STATIC EFI_HANDLE mRamHandle;
 STATIC BOOLEAN mRamUsbOwned;
+STATIC BOOLEAN mRamMutating;
+STATIC BOOLEAN mUsbModeSwitchBusy, mUsbModeSwitchQueued;
 STATIC EFI_BLOCK_IO_MEDIA mRamMedia;
 STATIC EFI_BLOCK_IO_PROTOCOL mRamBlock;
 #pragma pack(push,1)
@@ -64,7 +67,7 @@ STATIC EFI_STATUS EFIAPI RamReset (EFI_BLOCK_IO_PROTOCOL *This, BOOLEAN Extended
 STATIC EFI_STATUS EFIAPI RamRead (EFI_BLOCK_IO_PROTOCOL *This, UINT32 Id,
                                   EFI_LBA Lba, UINTN Bytes, VOID *Buffer)
 {
-  if (This!=&mRamBlock || mRamDisk==NULL || mRamUsbOwned) return EFI_NO_MEDIA;
+  if (This!=&mRamBlock || mRamDisk==NULL || mRamUsbOwned || mRamMutating) return EFI_NO_MEDIA;
   if (Id!=mRamMedia.MediaId) return EFI_MEDIA_CHANGED;
   if (Bytes%512!=0) return EFI_BAD_BUFFER_SIZE;
   if (Bytes==0) return EFI_SUCCESS;
@@ -91,7 +94,7 @@ STATIC EFI_STATUS RamUnpublish (VOID)
 STATIC EFI_STATUS RamPublish (VOID)
 {
   EFI_STATUS S;
-  if (mRamDisk==NULL || mRamUsbOwned || mRamHandle!=NULL) return EFI_SUCCESS;
+  if (mRamDisk==NULL || mRamUsbOwned || mRamMutating || mRamHandle!=NULL) return EFI_SUCCESS;
   ZeroMem(&mRamMedia,sizeof(mRamMedia));
   mRamMedia.MediaId=0xB327;mRamMedia.MediaPresent=TRUE;mRamMedia.ReadOnly=TRUE;
   mRamMedia.LogicalPartition=TRUE;
@@ -117,7 +120,7 @@ STATIC EFI_STATUS RamAllocate (VOID)
 STATIC EFI_STATUS RamRelease (VOID)
 {
   EFI_STATUS S;
-  if (mRamUsbOwned) return EFI_ACCESS_DENIED;
+  if (mRamUsbOwned || mRamMutating) return EFI_ACCESS_DENIED;
   S=RamUnpublish();if (EFI_ERROR(S)) return S;
   if (mRamDisk==NULL) return EFI_SUCCESS;
   S=gBS->FreePages((UINTN)mRamDisk,USB_RAM_DISK_PAGES);
@@ -128,7 +131,9 @@ STATIC EFI_STATUS EFIAPI StockSetRamSize (USB_BRINGUP_PROTOCOL *This, UINT32 MiB
 {
   (VOID)This;
   if (StockCurrentTpl()!=TPL_APPLICATION || mPolling) return EFI_NOT_READY;
-  if (MiB<64 || MiB>2048) return EFI_INVALID_PARAMETER;
+  if(mUsbModeSwitchBusy || mUsbModeSwitchQueued)return EFI_NOT_READY;
+  if (MiB<64 || MiB>8192) return EFI_INVALID_PARAMETER;
+  if (mRamUsbOwned || mRamMutating) return EFI_ACCESS_DENIED;
   if (mRamDisk!=NULL && MiB!=mRamBytes/(1024*1024)) return EFI_ACCESS_DENIED;
   mRamRequestedMiB=MiB;return EFI_SUCCESS;
 }
@@ -136,4 +141,18 @@ STATIC EFI_STATUS EFIAPI StockGetRamSize (USB_BRINGUP_PROTOCOL *This, UINT32 *Mi
 {
   (VOID)This;if (MiB==NULL || Allocated==NULL) return EFI_INVALID_PARAMETER;
   *MiB=mRamRequestedMiB;*Allocated=mRamDisk!=NULL;return EFI_SUCCESS;
+}
+STATIC EFI_STATUS EFIAPI StockCreateRamDisk (USB_BRINGUP_PROTOCOL *This, UINT32 MiB)
+{
+  EFI_STATUS S=StockSetRamSize(This,MiB);
+  if (EFI_ERROR(S)) return S;
+  S=RamAllocate();return EFI_ERROR(S)?S:RamPublish();
+}
+STATIC EFI_STATUS EFIAPI StockGetRamInfo (USB_BRINGUP_PROTOCOL *This, USB_RAM_DISK_INFO *Info)
+{
+  (VOID)This;if (Info==NULL) return EFI_INVALID_PARAMETER;
+  ZeroMem(Info,sizeof(*Info));Info->RequestedMiB=mRamRequestedMiB;
+  Info->Bytes=mRamBytes;Info->Allocated=mRamDisk!=NULL;
+  Info->UsbOwned=mRamUsbOwned;Info->UploadActive=mRamMutating;Info->LocalMounted=mRamHandle!=NULL;
+  return EFI_SUCCESS;
 }

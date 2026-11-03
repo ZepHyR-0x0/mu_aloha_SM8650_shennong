@@ -88,6 +88,8 @@ def embedded_fv(image):
     return payload, candidates[0]
 
 def verify(image_path, stack, build_fv=None, build_fd=None, stock_root=None, output=None):
+    if stack != "stock":
+        raise ValueError("Non-stock USB images are no longer supported")
     image = image_path.read_bytes()
     payload, fv = embedded_fv(image)
     if build_fv is not None:
@@ -97,7 +99,7 @@ def verify(image_path, stack, build_fv=None, build_fd=None, stock_root=None, out
     entries = list(files(fv))
     by_guid = dict(entries)
     assert len(entries) == len(by_guid), 'Duplicate FFS GUID'
-    required, excluded = (NATIVE, DIRECT) if stack == 'stock' else (DIRECT, NATIVE)
+    required, excluded = NATIVE, DIRECT
     modules = {}
     if output:
         output.mkdir(parents=True, exist_ok=True)
@@ -134,7 +136,7 @@ def verify(image_path, stack, build_fv=None, build_fd=None, stock_root=None, out
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('image', type=Path)
-    p.add_argument('--stack', choices=('stock','direct'), required=True)
+    p.add_argument('--stack', choices=('stock',), default='stock')
     p.add_argument('--fv', type=Path)
     p.add_argument('--fd', type=Path)
     p.add_argument('--stock-root', type=Path)

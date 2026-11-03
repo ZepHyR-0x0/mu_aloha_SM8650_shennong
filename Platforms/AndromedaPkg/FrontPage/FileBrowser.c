@@ -5,6 +5,10 @@
 #include <Protocol/SimpleWindowManager.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Protocol/BlockIo.h>
+#include <Protocol/DiskIo.h>
+#include <Protocol/DriverBinding.h>
+#include <Protocol/LoadedImage.h>
+#include <Library/DevicePathLib.h>
 #include <Protocol/PartitionInfo.h>
 #include <Protocol/DevicePath.h>
 #include <Protocol/UsbBringup.h>
@@ -38,6 +42,7 @@ typedef struct {
   UINT64 Size;
   BOOLEAN Directory;
   BOOLEAN Mounted;
+  CHAR16 Format[12];
 } FB_ITEM;
 typedef struct {
   MS_SIMPLE_WINDOW_MANAGER_PROTOCOL *Swm;
@@ -54,6 +59,8 @@ typedef struct {
   EFI_HANDLE Volume;
   EFI_FILE_PROTOCOL *Directory;
   CHAR16 Path[FB_PATH_CHARS];
+  CHAR16 VolumeName[FB_NAME_CHARS];
+  CHAR16 VolumeFormat[12];
   CHAR16 Status[192];
   CHAR16 PreviewName[FB_NAME_CHARS];
   UINT64 PreviewSize;
@@ -72,6 +79,14 @@ STATIC VOID FbTrace (CONST CHAR8 *Format, EFI_STATUS Status, UINTN Count)
 {
   CHAR8 Text[160];
   UINTN N = AsciiSPrint (Text, sizeof (Text), Format, Status, Count);
+  SerialPortWrite ((UINT8 *)Text, N);
+}
+STATIC VOID FbReadTrace (FB *B, CONST CHAR8 *Action, CONST CHAR16 *Name, EFI_STATUS Status, UINTN Count)
+{
+  CHAR8 Text[2048];
+  UINTN N = AsciiSPrint (Text, sizeof(Text),
+    "[FILES READ] %a volume=%s format=%s path=%s name=%s -> %r count=%u\r\n",
+    Action, B->VolumeName, B->VolumeFormat, B->Path, Name, Status, Count);
   SerialPortWrite ((UINT8 *)Text, N);
 }
 STATIC VOID FbText (FB *B, CHAR16 *Text, UINTN X, UINTN Y, EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Bg)
@@ -100,7 +115,7 @@ STATIC VOID FbPaint (FB *B)
   CHAR16 *Buttons[] = {L"Back", L"Prev", L"Next", L"Exit"};
   FbFill (B, &mBg, 0, 0, B->Width, B->Height);
   FbText (B, L"Files (read only)", 20, 20, &mBg);
-  FbText (B, B->Volume == NULL ? L"UFS / RAM / FAT (read only)" : B->Path, 20, B->FontHeight + 40, &mBg);
+  FbText (B, B->Volume == NULL ? L"UFS / USB / RAM (read only)" : B->Path, 20, B->FontHeight + 40, &mBg);
   for (I = 0; I < 4; I++) {
     EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Bg = B->Tap.Armed && B->Tap.LastTarget == I + 1 ? &mSel : &mButtonBg;
     FbFill (B, Bg, I * B->Width / 4 + 4, B->ToolbarTop, B->Width / 4 - 8, B->ToolbarHeight);
@@ -129,13 +144,14 @@ STATIC VOID FbPaint (FB *B)
       EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Bg = B->Selected == B->Top + I ? &mSel : &mBg;
       FbFill (B, Bg, 10, B->RowTop + I * B->RowHeight, B->Width - 20, B->RowHeight - 2);
       UnicodeSPrint (Line, sizeof (Line), L"%s %s  %Lu bytes", Item->Directory ? L"[DIR]" : L"[FILE]", Item->Name, Item->Size);
-      if (B->Volume == NULL) UnicodeSPrint (Line, sizeof (Line), L"%s %s  %Lu MiB", Item->Mounted ? L"[FAT]" : L"[RAW]", Item->Name, Item->Size / 1024 / 1024);
+      if (B->Volume == NULL) UnicodeSPrint (Line, sizeof (Line), L"[%s%s] %s  %Lu MiB", Item->Format,
+        Item->Mounted ? L"" : L" raw", Item->Name, Item->Size / 1024 / 1024);
       FbText (B, Line, 20, B->RowTop + I * B->RowHeight + 10, Bg);
     }
   }
   FbText (B, B->Status, 20, B->FooterTop - B->FontHeight - 20, &mBg);
   FbFill (B, &mButtonBg, 10, B->FooterTop, B->Width - 20, B->ToolbarHeight);
-  FbText (B, B->Volume == NULL ? L"Exit to menu" : L"Back / return", 25, B->FooterTop + 16, &mButtonBg);
+  FbText (B, B->Volume == NULL && !B->Previewing ? L"Exit to menu" : L"Back / return", 25, B->FooterTop + 16, &mButtonBg);
 }
 STATIC VOID FbResetList (FB *B)
 {
@@ -144,9 +160,36 @@ STATIC VOID FbResetList (FB *B)
   ZeroMem (&B->Tap, sizeof (B->Tap));
   B->TouchActive = B->Dragging = FALSE;
 }
+STATIC EFI_HANDLE FbExt4Driver (VOID)
+{
+  EFI_GUID Ext4Guid = {0x75f2b676,0xd73b,0x45cb,{0xb7,0xc1,0x30,0x3c,0x7f,0x4e,0x6f,0xd6}};
+  EFI_HANDLE *Handles = NULL, Driver = NULL;
+  UINTN Count = 0, I;
+  if (EFI_ERROR (gBS->LocateHandleBuffer (ByProtocol,&gEfiDriverBindingProtocolGuid,NULL,&Count,&Handles))) return NULL;
+  for (I=0; I<Count; I++) {
+    EFI_DRIVER_BINDING_PROTOCOL *Binding = NULL;
+    EFI_LOADED_IMAGE_PROTOCOL *Image = NULL;
+    EFI_DEVICE_PATH_PROTOCOL *Node;
+    if (EFI_ERROR (gBS->HandleProtocol (Handles[I],&gEfiDriverBindingProtocolGuid,(VOID **)&Binding)) || Binding == NULL ||
+        EFI_ERROR (gBS->HandleProtocol (Binding->ImageHandle,&gEfiLoadedImageProtocolGuid,(VOID **)&Image)) || Image == NULL ||
+        Image->FilePath == NULL || !IsDevicePathValid (Image->FilePath,1024)) continue;
+    for (Node=Image->FilePath; !IsDevicePathEnd(Node); Node=NextDevicePathNode(Node)) {
+      if (DevicePathType(Node)==MEDIA_DEVICE_PATH && DevicePathSubType(Node)==MEDIA_PIWG_FW_FILE_DP &&
+          DevicePathNodeLength(Node)==sizeof(MEDIA_FW_VOL_FILEPATH_DEVICE_PATH) &&
+          CompareGuid (&((MEDIA_FW_VOL_FILEPATH_DEVICE_PATH *)Node)->FvFileName,&Ext4Guid)) {
+        Driver=Binding->DriverBindingHandle;
+        break;
+      }
+    }
+    if (Driver != NULL) break;
+  }
+  if (Handles != NULL) gBS->FreePool (Handles);
+  return Driver;
+}
 STATIC EFI_STATUS FbVolumes (FB *B)
 {
   EFI_HANDLE *Handles;
+  EFI_HANDLE Ext4Drivers[2] = {FbExt4Driver(),NULL};
   UINTN Count, I;
   EFI_STATUS Status;
   FbResetList (B);
@@ -159,7 +202,7 @@ STATIC EFI_STATUS FbVolumes (FB *B)
     EFI_BLOCK_IO_PROTOCOL *Block;
     EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs;
     EFI_DEVICE_PATH_PROTOCOL *Path;
-    BOOLEAN Ram=FALSE,Gpt;
+    BOOLEAN Ram=FALSE,Gpt,Usb=FALSE;
     FB_ITEM *Item;
     if (EFI_ERROR (gBS->HandleProtocol (Handles[I], &gEfiBlockIoProtocolGuid, (VOID **)&Block)) ||
         Block->Media == NULL || !Block->Media->MediaPresent || Block->Media->BlockSize == 0) continue;
@@ -168,19 +211,47 @@ STATIC EFI_STATUS FbVolumes (FB *B)
         Path->Type==HARDWARE_DEVICE_PATH && Path->SubType==HW_VENDOR_DP &&
         (Path->Length[0]|((UINT16)Path->Length[1]<<8))==sizeof(VENDOR_DEVICE_PATH))
       Ram=CompareGuid(&((VENDOR_DEVICE_PATH *)Path)->Guid,&mRamDeviceGuid);
-    if (!Gpt && !Ram) continue;
+    if (!EFI_ERROR (gBS->HandleProtocol (Handles[I], &gEfiDevicePathProtocolGuid, (VOID **)&Path)) &&
+        Path != NULL && IsDevicePathValid (Path, 1024)) {
+      EFI_DEVICE_PATH_PROTOCOL *Node = Path;
+      while (!IsDevicePathEnd (Node)) {
+        if (DevicePathType (Node) == MESSAGING_DEVICE_PATH &&
+            (DevicePathSubType (Node) == MSG_USB_DP || DevicePathSubType (Node) == MSG_USB_CLASS_DP ||
+             DevicePathSubType (Node) == MSG_USB_WWID_DP)) Usb = TRUE;
+        Node = NextDevicePathNode (Node);
+      }
+    }
+    if (!Gpt && !Ram && !Usb) continue;
     Item = &B->Items[B->Count++];
     ZeroMem (Item, sizeof (*Item));
     if (Ram) StrCpyS(Item->Name,FB_NAME_CHARS,L"RAMDISK (volatile)");
-    else StrnCpyS (Item->Name, FB_NAME_CHARS, Part->Info.Gpt.PartitionName, 36);
+    else if (Gpt) StrnCpyS (Item->Name, FB_NAME_CHARS, Part->Info.Gpt.PartitionName, 36);
+    else UnicodeSPrint (Item->Name, sizeof (Item->Name), L"USB disk %u", (UINT32)B->Count);
     Item->Handle = Handles[I];
     Item->Size = Block->Media->LastBlock < MAX_UINT64 / Block->Media->BlockSize ?
                  (Block->Media->LastBlock + 1) * Block->Media->BlockSize : 0;
     Item->Mounted = (BOOLEAN)(B->Policy->IsProtected (Handles[I]) &&
       !EFI_ERROR (gBS->HandleProtocol (Handles[I], &gEfiSimpleFileSystemProtocolGuid, (VOID **)&Fs)));
+    StrCpyS (Item->Format, ARRAY_SIZE (Item->Format), Item->Mounted ? L"FS" : L"RAW");
+    if (B->Policy->IsProtected (Handles[I]) && Item->Size >= 1082) {
+      EFI_DISK_IO_PROTOCOL *Disk;
+      UINT8 Signature[58];
+      if (!EFI_ERROR (gBS->HandleProtocol (Handles[I], &gEfiDiskIoProtocolGuid, (VOID **)&Disk)) &&
+          !EFI_ERROR (Disk->ReadDisk (Disk, Block->Media->MediaId, 1024, sizeof (Signature), Signature))) {
+        if (ReadUnaligned16 ((UINT16 *)(Signature+56)) == 0xEF53) {
+          StrCpyS (Item->Format, ARRAY_SIZE (Item->Format), L"ext4");
+          if (!Item->Mounted && Block->Media->ReadOnly && Ext4Drivers[0] != NULL) {
+            Status = gBS->ConnectController (Handles[I],Ext4Drivers,NULL,FALSE);
+            FbTrace ("[FILES] protected ext4 connect=%r volume=%u\r\n",Status,I);
+            Item->Mounted = !EFI_ERROR (gBS->HandleProtocol (Handles[I],&gEfiSimpleFileSystemProtocolGuid,(VOID **)&Fs));
+          }
+        } else if (ReadUnaligned32 ((UINT32 *)Signature) == 0xF2F52010)
+          StrCpyS (Item->Format, ARRAY_SIZE (Item->Format), L"F2FS");
+      }
+    }
   }
   gBS->FreePool (Handles);
-  UnicodeSPrint (B->Status, sizeof (B->Status), L"%u partitions. RAW includes ext4/F2FS/encrypted volumes.", B->Count);
+  UnicodeSPrint (B->Status, sizeof (B->Status), L"%u volumes. ext4/FS open files; raw previews bytes.", B->Count);
   FbTrace ("[FILES b319] volumes -> %r count=%u\r\n", EFI_SUCCESS, B->Count);
   return EFI_SUCCESS;
 }
@@ -222,6 +293,7 @@ STATIC EFI_STATUS FbReadDirectory (FB *B)
   UnicodeSPrint (B->Status, sizeof (B->Status), L"%u entries%s. Writes blocked: %u", B->Count,
                  B->Count == FB_MAX_ITEMS ? L" (display limit reached)" : L"", B->Policy->Denied);
   FbTrace ("[FILES b319] directory -> %r count=%u\r\n", Status, B->Count);
+  FbReadTrace (B, "directory", L"", Status, B->Count);
   return Status;
 }
 STATIC EFI_STATUS FbEnter (FB *B)
@@ -233,13 +305,33 @@ STATIC EFI_STATUS FbEnter (FB *B)
   Item = B->Items[B->Selected];
   if (B->Volume == NULL) {
     EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs;
+    StrCpyS (B->VolumeName, FB_NAME_CHARS, Item.Name);
+    StrCpyS (B->VolumeFormat, ARRAY_SIZE (B->VolumeFormat), Item.Format);
+    StrCpyS (B->Path, FB_PATH_CHARS, L"\\");
     if (!Item.Mounted || !B->Policy->IsProtected (Item.Handle)) {
-      StrCpyS (B->Status, 192, L"No supported filesystem. Raw partitions are never modified.");
-      return EFI_UNSUPPORTED;
+      EFI_DISK_IO_PROTOCOL *Disk;
+      EFI_BLOCK_IO_PROTOCOL *Block;
+      if (!B->Policy->IsProtected (Item.Handle)) return EFI_WRITE_PROTECTED;
+      Status = gBS->HandleProtocol (Item.Handle, &gEfiBlockIoProtocolGuid, (VOID **)&Block);
+      if (EFI_ERROR (Status)) return Status;
+      Status = gBS->HandleProtocol (Item.Handle, &gEfiDiskIoProtocolGuid, (VOID **)&Disk);
+      if (EFI_ERROR (Status)) return Status;
+      B->PreviewLength = (UINTN)MIN ((UINT64)sizeof (B->Preview), Item.Size);
+      Status = Disk->ReadDisk (Disk, Block->Media->MediaId, 0, B->PreviewLength, B->Preview);
+      FbReadTrace (B, "raw", L"", Status, B->PreviewLength);
+      if (EFI_ERROR (Status)) return Status;
+      StrCpyS (B->PreviewName, FB_NAME_CHARS, Item.Name);
+      B->PreviewSize = Item.Size;
+      B->Previewing = TRUE;
+      B->PreviewTop = 0;
+      StrCpyS (B->Status, 192, L"Raw bytes only. No decryption or filesystem mount.");
+      FbTrace ("[FILES] raw partition read -> %r bytes=%u\r\n", Status, B->PreviewLength);
+      return EFI_SUCCESS;
     }
     Status = gBS->HandleProtocol (Item.Handle, &gEfiSimpleFileSystemProtocolGuid, (VOID **)&Fs);
     if (EFI_ERROR (Status)) return Status;
     Status = Fs->OpenVolume (Fs, &File);
+    FbReadTrace (B, "open-volume", L"", Status, 0);
     if (EFI_ERROR (Status)) return Status;
     B->Directory = File;
     B->Volume = Item.Handle;
@@ -249,6 +341,7 @@ STATIC EFI_STATUS FbEnter (FB *B)
   if (!B->Policy->IsProtected (B->Volume)) return EFI_WRITE_PROTECTED;
   if (Item.Directory && StrLen (B->Path) + StrLen (Item.Name) + 2 >= FB_PATH_CHARS) return EFI_BAD_BUFFER_SIZE;
   Status = B->Directory->Open (B->Directory, &File, Item.Name, EFI_FILE_MODE_READ, 0);
+  FbReadTrace (B, Item.Directory ? "open-directory" : "open-file", Item.Name, Status, 0);
   if (EFI_ERROR (Status)) return Status;
   if (Item.Directory) {
     if (StrLen (B->Path) > 1) StrCatS (B->Path, FB_PATH_CHARS, L"\\");
@@ -260,6 +353,7 @@ STATIC EFI_STATUS FbEnter (FB *B)
   B->PreviewLength = sizeof (B->Preview);
   Status = File->Read (File, &B->PreviewLength, B->Preview);
   File->Close (File);
+  FbReadTrace (B, "file", Item.Name, Status, B->PreviewLength);
   if (EFI_ERROR (Status) || B->PreviewLength > sizeof (B->Preview)) return EFI_VOLUME_CORRUPTED;
   StrCpyS (B->PreviewName, FB_NAME_CHARS, Item.Name);
   B->PreviewSize = Item.Size;
@@ -310,7 +404,7 @@ STATIC UINTN FbHandleTouch (FB *B, EFI_ABSOLUTE_POINTER_STATE *Touch, UINT64 Ms,
     if (Touch->CurrentY >= B->ToolbarTop && Touch->CurrentY < B->ToolbarTop + B->ToolbarHeight)
       Target = FB_BACK + (UINTN)(Touch->CurrentX * 4 / B->Width);
     else if (Touch->CurrentY >= B->FooterTop && Touch->CurrentY < B->FooterTop + B->ToolbarHeight)
-      Target = B->Volume == NULL ? FB_CLOSE : FB_BACK;
+      Target = B->Volume == NULL && !B->Previewing ? FB_CLOSE : FB_BACK;
     else if (!B->Previewing && Touch->CurrentY >= B->RowTop && Touch->CurrentY < B->RowTop + B->Rows * B->RowHeight) {
       UINTN I = B->Top + ((UINTN)Touch->CurrentY - B->RowTop) / B->RowHeight;
       if (I < B->Count) Target = FB_ROW_BASE + I;
@@ -377,7 +471,7 @@ VOID FpFileBrowser (MS_SIMPLE_WINDOW_MANAGER_PROTOCOL *Swm, EFI_GRAPHICS_OUTPUT_
   B = AllocateZeroPool (sizeof (*B));
   if (B == NULL) return;
   if (EFI_ERROR (gBS->LocateProtocol (&mGuardGuid, NULL, (VOID **)&B->Policy)) ||
-      B->Policy->Revision < 1 || B->Policy->Revision > 3 || B->Policy->IsProtected == NULL) {
+      B->Policy == NULL || B->Policy->Revision < 1 || B->Policy->Revision > 3 || B->Policy->IsProtected == NULL) {
     FbTrace ("[FILES b319] refused without complete storage guard: %r %u\r\n", EFI_WRITE_PROTECTED, 0);
     goto Done;
   }

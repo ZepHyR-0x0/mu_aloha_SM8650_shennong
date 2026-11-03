@@ -1,0 +1,27 @@
+[Defines]
+  INF_VERSION = 0x0001001B
+  BASE_NAME = WirelessSurveyDxe
+  FILE_GUID = 39934BD7-8424-4D46-A499-5624D0330FB1
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT = WirelessSurveyEntry
+[Sources]
+  WirelessSurveyDxe.c
+[Packages]
+  MdePkg/MdePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  PrintLib
+  SerialPortLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+[Protocols]
+  gEfiWiFiProtocolGuid
+  gEfiWiFi2ProtocolGuid
+  gEfiBluetoothConfigProtocolGuid
+  gEfiBluetoothLeConfigProtocolGuid
+[Depex]
+  TRUE

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import time
+import zlib
 
 DEPENDENCIES = Path(__file__).with_name('cdc-deps')
 if DEPENDENCIES.is_dir():
@@ -56,7 +57,7 @@ def _serial_worker(connection, name, baud):
     serial, _ = serial_module()
     port = serial.Serial(port=None, baudrate=baud, bytesize=serial.EIGHTBITS,
                          parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE,
-                         timeout=0.1, write_timeout=2, xonxoff=False,
+                         timeout=0.1, write_timeout=20, xonxoff=False,
                          rtscts=False, dsrdtr=False)
     port.port = name
     port.dtr = True
@@ -129,7 +130,7 @@ class PortProcess:
         return self._call('read', size)
 
     def write(self, data):
-        return self._call('write', data)
+        return self._call('write', data, timeout=25)
 
     def close(self):
         try:
@@ -154,7 +155,7 @@ def _connect_process(name, baud, open_timeout, worker):
     return port
 
 
-def open_port(name, baud=115200, open_timeout=15):
+def open_port(name, baud=3000000, open_timeout=15):
     return _connect_process(name, baud, open_timeout, _serial_worker)
 
 
@@ -218,13 +219,26 @@ class CommandClient:
         if header.startswith(b'ERR '):
             raise CdcError(header.decode('ascii', errors='replace'))
         if header.startswith(b'OK '):
+            if command.strip().startswith('boot ') and header == b'OK boot accepted':
+                # Keep DTR asserted until the ACK has completed and the device
+                # launches the image. Returning immediately can cancel it.
+                try:
+                    result = self._line(deadline, 'boot result')
+                except CdcError as error:
+                    return Response('text', b'', f'OK boot accepted; return unobserved ({error})')
+                if result.startswith(b'ERR '):
+                    raise CdcError(result.decode('ascii', errors='replace'))
+                if result != b'OK boot returned':
+                    raise CdcError('Invalid boot result.')
+                return Response('text', b'', result.decode('ascii'))
             return Response('text', b'', header.decode('ascii', errors='replace'))
         match = re.fullmatch(rb'BEGIN (logcat|logcat-last|scrcat|shell) ([0-9]+)( image/bmp base64| status=0x[0-9a-fA-F]+)?', header)
         if not match:
             raise CdcError('Invalid CDC response header. Use command mode outside UEFI Shell.')
         kind = match[1].decode('ascii')
         wanted = command.strip().lower()
-        if kind != ('logcat' if wanted == 'log' else 'shell' if wanted.startswith('shell ') else wanted):
+        shell_alias = wanted.startswith(('shell ', 'test ', 'haptic ', 'rpmb-read ')) or wanted == 'rpmb-info'
+        if kind != ('logcat' if wanted == 'log' else 'shell' if shell_alias else wanted):
             raise CdcError(f'Unexpected reply: {kind} for {wanted}. Reconnect to reset the session.')
         length = int(match[2])
         limit = 180000000 if kind == 'scrcat' else 262144
@@ -252,6 +266,55 @@ class CommandClient:
                 raise CdcError('Invalid screenshot BMP; the output file was not saved.')
         status = int(suffix[10:], 16) if kind == 'shell' else 0
         return Response(kind, bytes(data), status=status)
+
+    def upload(self, source, destination):
+        """Stream windows over the current session; close/DTR aborts failures."""
+        source = Path(source)
+        if not destination or any(c in destination for c in '\r\n\x00'):
+            raise CdcError('Choose a relative path inside the RAM disk.')
+        with source.open('rb') as stream:
+            size = os.fstat(stream.fileno()).st_size
+            if size > 0xffffffff:
+                raise CdcError('The FAT32 file limit is 4294967295 bytes.')
+            crc = 0
+            while data := stream.read(1024*1024):
+                crc = zlib.crc32(data, crc)
+            stream.seek(0)
+            response = self.request(f'put {destination} {size} 0x{crc:08x}')
+            ready = f'OK put ready {size} window=65536'
+            if response.kind != 'text' or response.message not in (ready, ready+' pad=1024'):
+                raise CdcError('Invalid upload READY response; close the session to cancel.')
+            padded = response.message.endswith(' pad=1024')
+            count = actual_crc = 0
+            while count < size:
+                data = stream.read(min(65536, size-count))
+                if not data:
+                    raise CdcError('Source file changed during upload; close the session to cancel.')
+                wire = data
+                if padded and count+len(data)==size:
+                    wire += bytes((-len(data)) % 1024)
+                at = 0
+                while at < len(wire):
+                    sent = self.port.write(wire[at:])
+                    if sent is None or sent <= 0 or sent > len(wire)-at:
+                        raise CdcError('Incomplete upload write; close the session to cancel.')
+                    at += sent
+                actual_crc = zlib.crc32(data, actual_crc)
+                count += len(data)
+                header = self._line(time.monotonic()+self.timeout, 'upload acknowledgement')
+                expected = (f'OK put done {size} crc=0x{crc:08x}' if count == size
+                            else f'OK put progress {count}').encode('ascii')
+                if header.lower() != expected.lower():
+                    raise CdcError(f'Upload rejected or progress mismatch: {header!r}')
+                if self.progress:
+                    self.progress('upload', count, size)
+            if size == 0:
+                header = self._line(time.monotonic()+self.timeout, 'empty upload commit')
+                if header != b'OK put done 0 crc=0x00000000':
+                    raise CdcError(f'Empty upload rejected: {header!r}')
+            if actual_crc != crc or stream.read(1):
+                raise CdcError('Source file changed during upload.')
+            return Response('text', b'', f'OK uploaded {destination}: {size} bytes crc=0x{crc:08x}')
 
 
 def save_response(response, output=None):
@@ -344,18 +407,26 @@ def main(default_command=None):
     parser = argparse.ArgumentParser(description='Python Project Mu CDC console and command client.')
     parser.add_argument('--port', '-p', help='COM20, /dev/ttyACM0, etc.; automatic when unambiguous')
     parser.add_argument('--list', action='store_true', help='list serial ports without opening them')
-    parser.add_argument('--baud', type=int, default=115200)
+    parser.add_argument('--baud', type=int, default=3000000, help='CDC line coding (default: 3000000); USB throughput also depends on firmware and host')
     parser.add_argument('--timeout', type=float, default=120, help='command response timeout in seconds')
     parser.add_argument('--open-timeout', type=float, default=15)
-    parser.add_argument('--command', '-c', default=default_command, help='help, logcat, scrcat, "press up", "shell echo hello", or "reboot bootloader"')
+    parser.add_argument('--command', '-c', help='help, logcat, scrcat, "press up", "shell echo hello", or "reboot bootloader"')
     parser.add_argument('--output', '-o', type=Path, help='UTF-8 TXT log, decoded BMP screenshot, or Shell output destination')
     parser.add_argument('--shell', action='store_true', help='raw UEFI Shell terminal')
+    parser.add_argument('--upload', type=Path, help='upload this local file to the shared RAM disk')
+    parser.add_argument('--dest', help='relative RAM disk destination, e.g. EFI/BOOT/BOOTAA64.EFI')
     parser.add_argument('--local-echo', action='store_true', help='echo typed keys in Shell terminal')
     args = parser.parse_args()
     if args.timeout <= 0 or args.open_timeout <= 0:
         parser.error('Timeouts must be positive.')
     if args.shell and args.command is not None:
         parser.error('--shell cannot be combined with --command.')
+    if args.upload and (args.shell or args.command is not None or not args.dest):
+        parser.error('--upload requires --dest and cannot be combined with --shell/--command.')
+    if args.dest and not args.upload:
+        parser.error('--dest requires --upload.')
+    if args.command is None and not args.upload and not args.shell:
+        args.command = default_command
     port = None
     try:
         if args.list:
@@ -370,10 +441,12 @@ def main(default_command=None):
             terminal(port, args.local_echo)
             return 0
         client = CommandClient(port, args.timeout, progress_reporter())
-        if args.command is not None:
+        if args.upload:
+            save_response(client.upload(args.upload,args.dest))
+        elif args.command is not None:
             save_response(client.request(args.command), args.output)
         else:
-            print('Commands: help, logcat, logcat-last, logsync, scrcat, press up/down/power/esc, shell <command>, reboot [system|bootloader|recovery].')
+            print('Commands: help, logcat, shell <command>, test <args>, haptic <args>, rpmb-info/read, ramdisk create/info/hash/release, usb cdc/ramdisk/off.')
             print('Logs are saved as UTF-8 TXT; screenshots are decoded and saved as BMP.')
             print('Type quit to close. For UEFI Shell use --shell.')
             while True:

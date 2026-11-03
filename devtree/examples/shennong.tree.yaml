@@ -1,8 +1,8 @@
 meta:
   title: Shennong (SM8650) UEFI 打通设备树
-  subtitle: b326 USB标准枚举成功 · b329 两级BootMenu/触摸滚动修正 · b328 CDC Shell / 可变RAM盘 · 待实机
+  subtitle: CDC 提速 / 共享 RAM / MSC 回切 · 震动与闪光灯 · RPMB 只读 / ACPI / SMC/TZ
   platform: SM8650 / pineapple
-  updated: '2026-11-01'
+  updated: '2026-11-03'
 groups:
 - id: core
   label: 平台核心
@@ -42,7 +42,7 @@ nodes:
   name: DXE Core
   group: core
   driver: DxeCore
-  notes: b228 FS日志log574有原厂UsbDevice入口，log849协议存在；USB TEST照片显示RESIDENT/handles1。 恢复原厂DEPEX后已观察到发布；本次照片未走b228恢复加载分支。用户报告StartEx之后重启，确切异常未捕获。
+  notes: 当前候选经 fastboot 临时启动，FrontPage 与 CDC/UEFI Shell 命令运行。
 - id: chipinfo
   name: ChipInfo 芯片信息
   group: core
@@ -214,7 +214,7 @@ nodes:
   - gcc
   dt_path: /soc/ufshc@1d84000
 - id: ufs
-  name: UFS 主机控制器
+  name: UFS LUN / GPT / 文件只读访问
   group: storage
   base: 30949376
   size: 12288
@@ -231,7 +231,7 @@ nodes:
     delta: 143,360 B（stock 151,552 B，DEBUG_CLANG160LINUX）
     enabled: true
     note: 来源为外部调试镜像，风险与回退见 IsolatedBinaries/README.md。
-  notes: GCD 中 UFS_MEM/UFS_ICE 均为 mmio；日志 HCS=0x10F、FAT 分区可读。
+  notes: 6 个 LUN、123 个分区与原厂 GPT 一致；FAT 文件读取与平台原生 RPMB 只读响应可达，普通存储写/擦除保护保持。
   soft_deps:
   - smmu
   - icb
@@ -270,7 +270,7 @@ nodes:
   dt_path: /soc/qcom,msm-eud@88e0000
   compatible: qcom,msm-eud
 - id: usb_hsphy
-  name: eUSB2 高速 PHY
+  name: eUSB2 原厂 PHY / repeater
   group: usb
   base: 143536128
   size: 340
@@ -282,7 +282,7 @@ nodes:
   - usb_refclk
   dt_path: /soc/hsphy@88e3000
   compatible: qcom,usb-snps-eusb2-phy
-  notes: 真实原厂8780/E25C的HS PHY写序列和PIPE/UTMI分支在ARM64执行中验证；外部GPIO/clock仍模拟。 b326在native HS init前确认repeater；本机电气状态仍待USBBOARD/USBRPTR和host枚举。
+  notes: 原厂硬件链初始化后 CDC 和 MSC 在 Windows 枚举并传输；PHY/repeater/PMIC/时钟源保持源码锁。驱动可用范围不代表 USB 主机或 USB3 已完成。
 - id: usb_ssphy
   name: QMP 超速 PHY
   group: usb
@@ -351,7 +351,7 @@ nodes:
   - usb_xhci
   notes: 依赖主机模式；b123 没有 USB 键盘/鼠标枚举记录。
 - id: usb_device
-  name: USB Device / 下载模式
+  name: USB 原厂设备协议
   group: usb
   driver: UsbDeviceDxe + UsbStockReplayDxe
   deps:
@@ -363,7 +363,7 @@ nodes:
     ref: Binaries/QcomPkg/Drivers/UsbDeviceDxe
     enabled: true
     note: 原厂UsbDeviceDxe PE/DEPEX身份保持；b326枚举成功，b327类客户端使用native StartEx/Send/HandleEvent。
-  notes: b326用户确认UEFI电脑端18D1:D00D/Android Bootloader Interface OK/err0，日志有SET_ADDRESS和SET_CONFIGURATION(1)。 标准枚举已实机打通；vendor描述符没有fastboot命令引擎。b327新增的类协议还需实机。
+  notes: stock UsbInitDxe/UsbfnDwc3Dxe/UsbDeviceDxe 保持原样；CDC 枚举与传输通过，MSC 与热拔插独立验收。
   soft_deps:
   - usb_tcpm
   - usb_config
@@ -557,7 +557,7 @@ nodes:
   - charger
   notes: b321电池ADC和ChargerEx getter均Unsupported。 b322板号回退不等于燃料计恢复；SOC/温度/有效电压待实机数据。
 - id: scm
-  name: SCM / SMC 调用
+  name: SMC / SCM 查询
   group: security
   driver: SCM (QcomScmProtocol)
   deps:
@@ -567,7 +567,7 @@ nodes:
     enabled: true
     ref: extract/uefi_extract/ScmDxeCompat.efi
     note: b317恢复原厂失败分支；b318最终PE身份审计通过。
-  notes: b318 SCM=0x50002，ShmBridge/clientEnv非零，普通SMC成功；b319 SCM PE等于原厂。 SMC传输已通，不能据此宣称所有安全服务/PAS已通。
+  notes: 普通 SMC、QSEE feature 版本和 PAS 操作可用性查询有回应；仅查询，不代表子系统启动完成。
 - id: smmu
   name: Apps SMMU
   group: security
@@ -586,8 +586,7 @@ nodes:
   driver: TZ 固件
   deps:
   - scm
-  notes: 普通SMC/ShmBridge可回应；FeatureEnablerDxe股票字符串含featenabler/featenabler_a，APP_QUERY_APPID在加载前ELF_SIGNATURE_ERROR。 未绕过认证。抽出的FeatureEnablerDxe与原厂一致；需要同版本feature
-    TA签名链对照，不能凭本地句柄宣称TZ应用全部可用。
+  notes: SMC/ShmBridge 查询有回应；Keymaster 句柄查询可达；feature TA 签名与安全应用业务仍未完成。
 - id: qseecom
   name: QSEECom
   group: security
@@ -669,11 +668,11 @@ nodes:
   - lpass_tdm1
   notes: 当前UEFI没有音频播放后端；实际扬声器链为LPASS/TDM1+CS35L43。 移除误连到WCD939x USB switch的依赖边。本轮交付状态/条件核对，未实现播放。
 - id: pcie
-  name: PCIe 控制器
+  name: WLAN PCIe 原厂输入 / 平台适配
   group: connectivity
   base: 29360128
   size: 12288
-  driver: PcieDxe
+  driver: WirelessSurveyDxe / WiFi PCIe adapter
   deps:
   - gcc
   - tlmm
@@ -682,14 +681,14 @@ nodes:
   - icb
   dt_path: /soc/qcom,pcie@1c00000
   compatible: qcom,pci-msm
-  notes: shennong_fdt.dts PCIe0默认使能、PCIe1禁用；当前FV只有XhciPciEmulationDxe，未加入PciHostBridgeDxe/PciBusDxe/SM8650 rootbridge。 判定为未开始而非链路故障；需先补通用PCI栈和PHY/时钟/SMMU/MSI初始化，HW未通电。
+  notes: 原厂 PCIe 输入与供电/PHY 参数已核对，适配代码已纳入构建；尚无链路训练和 WLAN 数据通信完成证据。
 - id: wlan
-  name: WLAN (PCIe)
+  name: WLAN 扫描列表
   group: connectivity
-  driver: WlanDxe
+  driver: WirelessSurveyDxe / WiFi2 survey
   deps:
   - pcie
-  notes: DT cnss_pci0位于PCIe0，cnss_wlan_region 32MiB；UEFI未加载WlanDxe。 应依赖PCIe；未开始，不能判定射频/固件问题。BSP cnss2可用于后续。
+  notes: TEST 和 CDC 提供列表与 provider 状态；WiFi providers=0，真实 AP 扫描尚不可用。
 - id: nfc
   name: NFC SN-NCI
   group: connectivity
@@ -731,7 +730,7 @@ nodes:
   driver: HALIOMMU + hardware readback
   deps:
   - smmu
-  notes: b323验证原厂USB0独占CB8、SCTLR E0/TTBR0/1零、identity buffers并退休旧slot4。 Submit返回且GUI存活；命令完成不等于数据/事件DMA或全部枚举通过。
+  notes: 原厂 USB DMA 分配、提交与地址预检保留；CDC 上传与 MSC 回读正确。停止异常保留 DMA 缓冲，SMMU 隔离及 Windows 阶段映射仍须独立验证。
 - id: ram_log
   name: GUI / RAM日志二维码
   group: other
@@ -743,21 +742,21 @@ nodes:
   base: '0x81F00000'
   size: '0x40000'
 - id: usb_ep0_queue
-  name: EP0 SETUP队列命令
+  name: EP0 控制与重复描述符
   group: usb
   driver: UsbDeviceDxe / UsbfnDwc3Dxe native EP0
   deps:
   - usb_smmu
   - usb_noc
-  notes: b326实际主机请求连续完成device/config descriptor、SET_ADDRESS、GET_STATUS、SET_CONFIGURATION。 native EP0队列/控制传输已有实机结果，不能再沿用b230的无证据状态；新MSC/CDC bulk仍待实机。
+  notes: 原厂 EP0 负责枚举；配置后重复 GET_DESCRIPTOR 在已有 EP0 ownership 下由上层接管，避免重复状态响应。CDC 与 MSC 配置、类控制和回切已通过。
 - id: usb_event_dma
-  name: USB设备事件DMA
+  name: USB 原厂事件 / 批量 DMA
   group: usb
   driver: DWC3 event ring
   deps:
   - usb_smmu
   - usb_noc
-  notes: b326原始日志含busRESET 00000101、CONNECT_DONE 00000201、真实SETUP和配置请求。 DMA事件和EP0枚举链已跨过；b327保留SID/SMR/PAR/归属保护，不跳过preflight。
+  notes: 当前候选 CDC 多窗口文件上传、CRC 回读、MSC 主机文件 SHA256 与回切通过。DMA 始终经原厂缓冲分配和提交；停止后确认 halt 才释放，失败保留缓冲。
 - id: pmic_adc
   name: PMIC ADC电池遥测
   group: power
@@ -828,7 +827,7 @@ nodes:
   driver: FrontPage / USB_BRINGUP revision2
   notes: stock FS TEST仍不支持；b319以USB TEST和持久停点验证。 不能把Unsupported视为成功执行FS枚举测试。
 - id: usb_manual_tpl
-  name: USB手动测试TPL
+  name: USB 应用事件 pump / TPL
   group: usb
   driver: UsbfnDwc3Ref / TPL_CALLBACK
   deps:
@@ -839,7 +838,7 @@ nodes:
     enabled: true
     ref: b214
     note: b214实测TPL断言已消失；真实C嵌套锁/延后timer通过，旧16负对照失败；未解决枚举。
-  notes: b229照片实测StartEx前后与poll1均TPL4；b230保留普通timer/应用服务。 上下文差异已纠正且未消除重启，TPL8不是已确定的唯一根因；返回后的TPL仍待新日志。
+  notes: USB pump 在 TPL_APPLICATION 调用原厂 HandleEvent，退出 pump 后执行切换与恢复；重入被拒绝。MSC 事务等待与真实 CDC 拔插恢复已验证。
 - id: usb_init_event
   name: BDS USB初始化事件
   group: usb
@@ -890,22 +889,21 @@ nodes:
     note: 连续字节缓冲区；rc与Done都通过才发布数值。
   notes: b222逐字节值完整，却被UINT32[12]解析成000302…；原厂LDRB/STRB与真实C负对照确认。修正诊断，不证明枚举成功。
 - id: usb_image_packaging
-  name: USB最终镜像/FV模块校验
+  name: USB 镜像 / FV 来源锁
   group: usb
   deps:
   - dxe_core
   driver: USB最终镜像/FV模块校验
-  notes: b327实际Android/FD/FV、12生产PE/map、7个compiled USB actions、256KiB reserved区和47输入验证通过。 镜像SHA256 e728af81d5e8e775965cec10c00a6cdb642f28f1a5e97b48c11b8b739ae6186f；未git
-    add/commit，已保存未提交备份。
+  notes: 当前镜像 SHA256 bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d；原厂 USB、PMIC、SPMI、UFS 二进制与 FV 来源检查通过，两树 30 个源码锁文件一致。
 - id: usb_device_dispatch
-  name: UsbDevice依赖/派发/入口诊断
+  name: UsbDevice 原厂协议与派发
   group: usb
   deps:
   - dxe_core
   - pmic_arb
   - smem
   driver: UsbDevice依赖/派发/入口诊断
-  notes: b228已驻留/协议发布，照片无需Dispatch/LoadImage恢复。 b227恢复原厂SPMI AND SMEM后已有实测改善；b229保留有界恢复供接口缺失时诊断。
+  notes: 原厂 UsbDeviceDxe 驻留与协议发布已核对；StartEx、HandleEvent、Stop 由上层在 TPL_APPLICATION 调用，当前候选 CDC/MSC 枚举和切换实机通过。
 - id: usb_stock_replay
   name: 原厂USB DXE客户端
   group: usb
@@ -1108,7 +1106,7 @@ nodes:
     note: 仅退休经启动快照、独占原厂USB0/bypass/idle/identity DMA/全表稳定核验的旧精确SID40。
   notes: b325旧slot4退休、新slot8/CB8验证和Submit/Wait返回成功。 b326保持每次SETUP的DMA身份/归属检查，54场景及真实原厂连接回归通过。
 - id: usb_cable_lifecycle
-  name: USB 原厂连接 / 断线 / 再连接
+  name: USB 断连 / 模式切换恢复
   group: usb
   driver: UsbStockReplayDxe / b324
   deps:
@@ -1119,7 +1117,7 @@ nodes:
     ref: AndromedaPkg/Driver/UsbStockReplayDxe/StockTrace.h
     enabled: true
     note: 移除pre-set/re-pin/手工CoreInit/提前RunStop；原厂62AC→60D0/37EC/4A64接管连接状态。
-  notes: b326初始化/测试/拔插返回且主机枚举成功。 b327模式切换必须Stop成功后释放DMA buffer；Stop失败锁切换并保留可能由DMA持有的内存。新模式长传输待实机。
+  notes: 多次真实 CDC 拔插自动恢复，含日志接收中断；线缆下降沿取消会话，200 ms 后在 pump 外执行原厂 Stop/StartEx。原文件 CRC 与再次切换通过，锁释放已核对；大文件替换上传中断尚未捕获。当前 USB 上层及 stock 硬件链按源码锁固定。
 - id: usb_phy_clock
   name: USB 原厂PIPE/UTMI时钟分支
   group: usb
@@ -1136,39 +1134,39 @@ nodes:
     note: 移除无条件UTMI重放；只观察hs-only/qs08/pipe/phycfg。
   notes: b325 Qs04，b326标准枚举成功；native PIPE/UTMI时序在真实ARM64验证。 本轮不强制时钟重放；PHY有工作枚举路径，SS速率和独立状态仍待证据。
 - id: reboot_targets
-  name: 退出页 fastboot / recovery 重启
+  name: CDC / 退出页重启到 fastboot
   group: power
   driver: FrontPage / verified SPMI sid0:7148 / stock ResetRuntimeDxe
   deps:
   - pmic
   soft_deps:
   - persistent_log
-  notes: b326仍PMIC读回Device Error；本轮实际PMIC setter -> SPMI+18/154C空RMW软件复现Success但原因字节不变。 只在精确核验后用SPMI完好ReadLong/WriteLong设置SID0:7148一字节并读回，保留bit0；全局旧补丁不改，PSCI/目标待实机。窗口显示具体失败阶段。
+  notes: CDC reboot bootloader 已实机成功；system/recovery 目标未在本轮逐项验证。
 - id: usb_msc
-  name: USB MSC：logfs只读快照（待实机）
+  name: USB MSC / 共享 RAM 导出
   group: usb
-  driver: UsbFunctions / native UsbDevice
+  driver: UsbFunctions / stock UsbDevice
   deps:
   - usb_stock_replay
   - logfs_partition
   - readonly_storage
-  notes: VID18D1/PID4EE1，BPB扇区4096，RAM快照5MiB；READ/容量/BOT/恢复/写拒绝通过生产测试。 没有UFS writer能力。Refresh logfs export重新保存并快照；Windows盘符/FAT读取待实机。
+  notes: Windows 挂载共享 RAM，98 / 131333 字节文件主机 SHA256 校验通过；定时回 CDC 后同一文件 CRC 和 NSH 再执行通过。
 - id: usb_cdc
-  name: USB CDC ACM：串口日志（待实机）
+  name: USB CDC ACM / cdcshell
   group: usb
-  driver: UsbFunctions / CDC Union / native UsbDevice
+  driver: UsbFunctions / stock UsbDevice
   deps:
   - usb_stock_replay
   - ram_log
-  notes: b329 CDC输出从每包1KiB提高到最多64KiB，减少大段mapping table为清空输出环造成的丢字节与轮询次数。 MSC/BOT读路径仍为64KiB分块；写路径和RAM盘受只读保护策略不变。
+  notes: COM20：命令、日志、分段上传与回读、Shell NSH 执行通过；512 字节整包回复通过。
 - id: ram_disk
-  name: 512MiB FAT32内存盘（待实机）
+  name: 64..8192 MiB FAT32 共享 RAM disk
   group: storage
-  driver: UsbRamDisk / AllocatePages / read-only local BlockIo
+  driver: UsbRamDisk / RamFileCore / read-only local BlockIo
   deps:
   - usb_stock_replay
   - readonly_storage
-  notes: b328保留纯RAM/FAT32/本机只读；新增64-2048MiB HII string输入，默认512MiB；释放旧盘后才能改大小。 USB连接时取消本地发布，停USB后重新挂载Shell/FILES；无第二份快照，off/重启删除。六种容量的FAT几何与边界通过生产头文件测试。
+  notes: 64 / 128 MiB 实机精确分配，0 / 512 / 1024 / 66048 字节上传 CRC 通过；中断替换保留原文件。CDC 与本地只读文件系统共用一个 backing，MSC 使用同一内存。8192 MiB 仅几何/边界验证，实机大容量受可用内存限制。
 - id: log_refresh
   name: QR Log / Refresh Log（待实机）
   group: storage
@@ -1177,3 +1175,91 @@ nodes:
   - persistent_log
   - touch_navigation
   notes: QR Log改名，正下方Refresh Log保存当前RAM，成功/失败均有窗口反馈；实际菜单索引和编译IFR通过。 单次手动保存，不周期刷盘；单文件不超512KiB，RAM日志256KiB。
+- id: ram_upload
+  name: CDC RAM 文件上传
+  group: storage
+  deps:
+  - ram_disk
+  - usb_cdc
+  notes: 默认 CDC line coding 3,000,000；文件 RX 最大 64 KiB。1 MiB 上传实测 2.08 秒（491 KiB/s），CRC 正确；提速来自接收块调整。
+  driver: UsbRamTransfer / RamFileCore
+- id: efi_remote_boot
+  name: CDC 启动映射 EFI 文件
+  group: core
+  deps:
+  - dxe_core
+  - usb_cdc
+  notes: boot <FSx:\path.efi> 在 ACK 完成后启动；33280 字节 ARM64 EFI 上传并启动返回实机通过；WinPE 镜像尚未准备。
+  driver: UsbRemoteCommands / FrontPage RemoteControl
+- id: acpi_runtime
+  name: ACPI 表 / 关联 / 分段导出
+  group: core
+  deps:
+  - dxe_core
+  notes: 实机导出 15 张表，适用 checksum 与 FADT/DSDT/FACS 关联通过，MADT 8 CPU；DSDT OEM 仍含 SDM8550，WinPE 适配未完成。
+  driver: PlatformTestLib / ACPI SDT
+- id: smc_capabilities
+  name: SMC PAS 可用性查询
+  group: security
+  deps:
+  - scm
+  notes: 只读查询 PAS 指令能力与 QSEE feature 版本；没有执行 PAS 加载或认证绕过。
+  driver: PlatformTestLib
+- id: rpmb_read
+  name: RPMB 原始响应只读
+  group: security
+  deps:
+  - ufs
+  notes: 地址 0..3 原始 512 字节响应读取，类型/结果/地址/nonce 与前后计数器核对通过；无写/密钥/解锁 API，MAC 未认证。
+  driver: PlatformTestLib / native RPMB
+- id: ext4_read
+  name: 非加密 ext4 文件只读
+  group: storage
+  deps:
+  - ufs
+  notes: 只读 Ext4Dxe 已集成；加密分区不解密，文件读取范围以当前挂载与实际成功路径为准。
+  driver: Ext4Dxe
+- id: haptics
+  name: 震动 / 时长与强度滑动条
+  group: input
+  deps:
+  - pmic
+  notes: 用户确认明确震动；TEST 独立页面支持时长和强度滑动条、三种模式。强度改按 DIRECT_PLAY gain 映射，档位触感仍需人工比较。
+  driver: PmicHapticsLib / HapticTest
+- id: flash_led
+  name: 双通道闪光灯
+  group: display
+  deps:
+  - pmic
+  notes: 用户确认实机发光；短脉冲启停和配置恢复已验证，TEST 与 CDC 命令可用。
+  driver: PlatformTestLib / PMIC flash
+- id: brightness_control
+  name: 屏幕亮度调整
+  group: display
+  deps:
+  - panel
+  notes: TEST/CDC 显示 DCS provider 状态；当前 provider 缺失，亮度调节未完成。
+  driver: PlatformTestLib
+- id: bluetooth_scan
+  name: 蓝牙 / BLE 设备列表
+  group: connectivity
+  deps:
+  - glink
+  notes: TEST/CDC 列表已接入；classic/BLE provider 均缺失，真实设备扫描未完成。
+  driver: WirelessSurveyDxe
+- id: gps_fix
+  name: GPS 定位
+  group: connectivity
+  deps:
+  - scm
+  - glink
+  notes: 可查询平台/固件依赖；没有定位 fix 或 NMEA 数据证据。
+  driver: PlatformTestLib / modem dependencies
+- id: gyro_samples
+  name: 陀螺仪 / 加速度采样
+  group: input
+  deps:
+  - lpass
+  - glink
+  notes: ADSP MDT 与配置文件只读可达；ADSP/Sensor 服务及实时采样尚未完成。
+  driver: PlatformTestLib / ADSP dependencies

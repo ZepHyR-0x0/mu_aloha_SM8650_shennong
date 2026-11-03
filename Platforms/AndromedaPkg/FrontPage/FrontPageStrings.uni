@@ -33,6 +33,7 @@
 #string STR_MF_MENU_OP_LOGREAD   #language en-US    "QR Log(last)"
 #string STR_MF_MENU_OP_RETURN_BOOT #language en-US  "Return to Boot Menu"
 #string STR_MF_MENU_OP_POWER_STATUS #language en-US "Power / Status"
+#string STR_MF_MENU_OP_TEST #language en-US "TEST"
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Generic Strings
@@ -185,7 +186,7 @@
 #string STR_USB_RAM #language en-US "RAM disk: enable / connect USB"
 #string STR_USB_RAM_HELP #language en-US "PC can write RAM. Eject and disable USB for Shell access. Release or reboot deletes files."
 #string STR_USB_RAM_SIZE #language en-US "RAM disk size (MB)"
-#string STR_USB_RAM_SIZE_HELP #language en-US "64-2048 MB, default 512. Release the old disk before changing size."
+#string STR_USB_RAM_SIZE_HELP #language en-US "64-8192 MiB, default 512. Shared by CDC uploads and USB storage. Release before resizing."
 #string STR_USB_RAM_OFF #language en-US "RAM disk: off (delete files)"
 #string STR_USB_DISABLE       #language en-US "Disable USB"
 #string STR_USB_REFRESH       #language en-US "Refresh logfs export"

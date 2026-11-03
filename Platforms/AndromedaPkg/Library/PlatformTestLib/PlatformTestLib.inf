@@ -1,0 +1,51 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = PlatformTestLib
+  FILE_GUID = 17FA3924-46EB-4AFB-9655-32C98CDBA32A
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = PlatformTestLib|UEFI_APPLICATION
+[Sources]
+  PlatformTestLib.c
+  WifiPcieTest.c
+  PlatformDevices.c
+  PlatformReadOnly.c
+  PlatformControls.c
+[Packages]
+  MdePkg/MdePkg.dec
+  AndromedaPkg/AndromedaPkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DevicePathLib
+  DebugLib
+  DxeServicesTableLib
+  IoLib
+  MemoryAllocationLib
+  PcdLib
+  PrintLib
+  SerialPortLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+[Protocols]
+  gEfiAcpiSdtProtocolGuid
+  gEfiLoadedImageProtocolGuid
+  gEfiBlockIoProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+  gEfiAbsolutePointerProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiDiskIoProtocolGuid
+  gEfiUsb2HcProtocolGuid
+  gEfiUsbIoProtocolGuid
+  gEfiPciRootBridgeIoProtocolGuid
+  gEfiPciIoProtocolGuid
+  gEfiWiFiProtocolGuid
+  gEfiWiFi2ProtocolGuid
+  gEfiSimpleNetworkProtocolGuid
+  gEfiPartitionInfoProtocolGuid
+[Guids]
+  gEfiFileInfoGuid
+[Pcd]
+  gAndromedaPkgTokenSpaceGuid.PcdSmbiosSystemRetailModel

@@ -1,21 +1,13 @@
 meta:
-  updated: '2026-11-02'
-  source: b341 实机：COM20 CDC 控制台、Shell echo、174412 字节日志 1.495 秒读取、1440x3200 截图 12.96 秒接收；b326 18D1:D00D 枚举确认
-  log_sha256: a43984c8dda9348a68a089457a65090131f3e7e5892e0d0927417ffd847676ca
-  baseline: b326 标准 USB 枚举打通；b328 CDC Shell 与 RAM 盘；b329 BootMenu 两级菜单；b338 七项修复与音量上屏；b339 USB 切换与启动优化；b340 Shell RAM 与 Python 控制台；b341 CDC 修复、5 秒无操作自动进 GUI、进表单前默认启动 CDC、logcat-last/logsync/shell/reboot
-    远程命令
-  image_sha256: e728af81d5e8e775965cec10c00a6cdb642f28f1a5e97b48c11b8b739ae6186f
-  photo_sha256: 439ced89adb9317b69ac537872c0b15c1aeec4f13f8a88cef310f33fb784138b
-  photos_sha256:
-    photo-b232-EP0-pool-success.png: 439ced89adb9317b69ac537872c0b15c1aeec4f13f8a88cef310f33fb784138b
-  logfs_dump_sha256: 943a0393f40eb9662bc7dc8d9fa0eacc129affec7957f322d5f252c6c19d84f3
-  historical_b320_log_last_sha256: 3b6c16e3791580c04952b51883b2b4b32910c68d96a1040b56a23fc3359177f1
+  updated: '2026-11-03'
+  source: CDC 命令实机验证与用户触感/发光反馈；每项注明已验证范围
+  image_sha256: bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d
+  baseline: stock USB 硬件链锁定；仅扩展 CDC、RAM 文件与恢复上层
 states:
   dxe_core:
-    state: partial
-    evidence: b228 FS日志log574有原厂UsbDevice入口，log849协议存在；USB TEST照片显示RESIDENT/handles1。
-    note: 恢复原厂DEPEX后已观察到发布；本次照片未走b228恢复加载分支。用户报告StartEx之后重启，确切异常未捕获。
-    updated: '2026-10-30'
+    state: ok
+    evidence: 当前候选经 fastboot 临时启动，FrontPage 与 CDC/UEFI Shell 命令运行。
+    updated: '2026-11-03'
   chipinfo:
     state: ok
     evidence: ChipInfo 分发完成；QC 驱动依赖的 ChipInfo/PlatformInfo 可用
@@ -72,9 +64,8 @@ states:
     updated: '2026-10-29'
   scm:
     state: partial
-    evidence: b318 SCM=0x50002，ShmBridge/clientEnv非零，普通SMC成功；b319 SCM PE等于原厂。
-    note: SMC传输已通，不能据此宣称所有安全服务/PAS已通。
-    updated: '2026-10-31'
+    evidence: 普通 SMC、QSEE feature 版本和 PAS 操作可用性查询有回应；仅查询，不代表子系统启动完成。
+    updated: '2026-11-03'
   smmu:
     state: partial
     evidence: sCR0 bit0是CLIENTPD，1禁用、0启用客户端；S2CR TYPE在[17:16]，CBNDX在[7:0]。
@@ -82,9 +73,8 @@ states:
     updated: '2026-10-31'
   tz:
     state: partial
-    evidence: 普通SMC/ShmBridge可回应；FeatureEnablerDxe股票字符串含featenabler/featenabler_a，APP_QUERY_APPID在加载前ELF_SIGNATURE_ERROR。
-    note: 未绕过认证。抽出的FeatureEnablerDxe与原厂一致；需要同版本feature TA签名链对照，不能凭本地句柄宣称TZ应用全部可用。
-    updated: '2026-11-01'
+    evidence: SMC/ShmBridge 查询有回应；Keymaster 句柄查询可达；feature TA 签名与安全应用业务仍未完成。
+    updated: '2026-11-03'
   qseecom:
     state: partial
     evidence: 兼容loader可为keymaster返回对象；featenabler签名仍失败。
@@ -109,9 +99,8 @@ states:
     note: ICE 不参与启动，已从 UFS 硬依赖中移出。
   ufs:
     state: patched
-    evidence: 'b196: BlockIo129、PartitionInfo123；keymaster_a/b 512KiB只读读取成功。'
-    note: 不增加设备分区写入；USB与UFS为不同master路径。
-    updated: '2026-10-29'
+    evidence: 6 个 LUN、123 个分区与原厂 GPT 一致；FAT 文件读取与平台原生 RPMB 只读响应可达，普通存储写/擦除保护保持。
+    updated: '2026-11-03'
   usb_config:
     state: partial
     evidence: 实际b327的UsbConfigDxe与本机提取原厂相同；wrapper两次repeater核验/四次WCD更新在PE中仍在。
@@ -127,10 +116,9 @@ states:
     evidence: 'b209: 088E2000=0，EUD未启用。'
     note: 未再读取b208异常地址0C276000；此读数只说明本次EUD开关状态。
   usb_hsphy:
-    state: partial
-    evidence: 真实原厂8780/E25C的HS PHY写序列和PIPE/UTMI分支在ARM64执行中验证；外部GPIO/clock仍模拟。
-    note: b326在native HS init前确认repeater；本机电气状态仍待USBBOARD/USBRPTR和host枚举。
-    updated: '2026-10-31'
+    state: patched
+    evidence: 原厂硬件链初始化后 CDC 和 MSC 在 Windows 枚举并传输；PHY/repeater/PMIC/时钟源保持源码锁。驱动可用范围不代表 USB 主机或 USB3 已完成。
+    updated: '2026-11-03'
   usb_ssphy:
     state: partial
     evidence: b225 log1054 ssusb_phy_init_success lane1。
@@ -153,10 +141,9 @@ states:
     state: unknown
     evidence: UsbKbDxe 已编入；b123 没有 USB 键盘/鼠标枚举记录
   usb_device:
-    state: ok
-    evidence: b326 实机 18D1:D00D / Android Bootloader Interface / OK err0；b341 GUI 进入表单前默认启动 CDC，USB 页仍可选 logfs、CDC、RAM 或关闭。
-    note: 标准枚举已实机打通；vendor描述符没有fastboot命令引擎。b327新增的类协议还需实机。
-    updated: '2026-11-02'
+    state: partial
+    evidence: stock UsbInitDxe/UsbfnDwc3Dxe/UsbDeviceDxe 保持原样；CDC 枚举与传输通过，MSC 与热拔插独立验收。
+    updated: '2026-11-03'
   wcd939x:
     state: partial
     evidence: b326 wrapper在native初始化后恢复WCD，并出现枚举成功；before/restored没有完整留在拼接日志。
@@ -244,15 +231,13 @@ states:
     note: 移除误连到WCD939x USB switch的依赖边。本轮交付状态/条件核对，未实现播放。
     updated: '2026-10-31'
   pcie:
-    state: todo
-    evidence: shennong_fdt.dts PCIe0默认使能、PCIe1禁用；当前FV只有XhciPciEmulationDxe，未加入PciHostBridgeDxe/PciBusDxe/SM8650 rootbridge。
-    note: 判定为未开始而非链路故障；需先补通用PCI栈和PHY/时钟/SMMU/MSI初始化，HW未通电。
-    updated: '2026-11-01'
+    state: partial
+    evidence: 原厂 PCIe 输入与供电/PHY 参数已核对，适配代码已纳入构建；尚无链路训练和 WLAN 数据通信完成证据。
+    updated: '2026-11-03'
   wlan:
-    state: todo
-    evidence: DT cnss_pci0位于PCIe0，cnss_wlan_region 32MiB；UEFI未加载WlanDxe。
-    note: 应依赖PCIe；未开始，不能判定射频/固件问题。BSP cnss2可用于后续。
-    updated: '2026-11-01'
+    state: partial
+    evidence: TEST 和 CDC 提供列表与 provider 状态；WiFi providers=0，真实 AP 扫描尚不可用。
+    updated: '2026-11-03'
   nfc:
     state: unknown
     evidence: 无任何实机证据
@@ -271,9 +256,8 @@ states:
     updated: '2026-10-31'
   usb_smmu:
     state: partial
-    evidence: b323验证原厂USB0独占CB8、SCTLR E0/TTBR0/1零、identity buffers并退休旧slot4。
-    note: Submit返回且GUI存活；命令完成不等于数据/事件DMA或全部枚举通过。
-    updated: '2026-10-31'
+    evidence: 原厂 USB DMA 分配、提交与地址预检保留；CDC 上传与 MSC 回读正确。停止异常保留 DMA 缓冲，SMMU 隔离及 Windows 阶段映射仍须独立验证。
+    updated: '2026-11-03'
   ram_log:
     state: partial
     evidence: b327实际FD含81F00000/256KiB reserved日志区，生产writer/reader wrap及canary通过。
@@ -281,14 +265,12 @@ states:
     updated: '2026-10-31'
   usb_ep0_queue:
     state: ok
-    evidence: b326实际主机请求连续完成device/config descriptor、SET_ADDRESS、GET_STATUS、SET_CONFIGURATION。
-    note: native EP0队列/控制传输已有实机结果，不能再沿用b230的无证据状态；新MSC/CDC bulk仍待实机。
-    updated: '2026-10-31'
+    evidence: 原厂 EP0 负责枚举；配置后重复 GET_DESCRIPTOR 在已有 EP0 ownership 下由上层接管，避免重复状态响应。CDC 与 MSC 配置、类控制和回切已通过。
+    updated: '2026-11-03'
   usb_event_dma:
     state: ok
-    evidence: b326原始日志含busRESET 00000101、CONNECT_DONE 00000201、真实SETUP和配置请求。
-    note: DMA事件和EP0枚举链已跨过；b327保留SID/SMR/PAR/归属保护，不跳过preflight。
-    updated: '2026-10-31'
+    evidence: 当前候选 CDC 多窗口文件上传、CRC 回读、MSC 主机文件 SHA256 与回切通过。DMA 始终经原厂缓冲分配和提交；停止后确认 halt 才释放，失败保留缓冲。
+    updated: '2026-11-03'
   pmic_adc:
     state: partial
     evidence: b323板号/ADC通知链有效，电池ADC仍Unsupported。
@@ -330,10 +312,9 @@ states:
     note: 不能把Unsupported视为成功执行FS枚举测试。
     updated: '2026-10-31'
   usb_manual_tpl:
-    state: partial
-    evidence: b229照片实测StartEx前后与poll1均TPL4；b230保留普通timer/应用服务。
-    note: 上下文差异已纠正且未消除重启，TPL8不是已确定的唯一根因；返回后的TPL仍待新日志。
-    updated: '2026-10-30'
+    state: ok
+    evidence: USB pump 在 TPL_APPLICATION 调用原厂 HandleEvent，退出 pump 后执行切换与恢复；重入被拒绝。MSC 事务等待与真实 CDC 拔插恢复已验证。
+    updated: '2026-11-03'
   usb_init_event:
     state: partial
     evidence: b228照片InitUsbController signal返回Success，但notify同时打印GPIO7。
@@ -356,14 +337,12 @@ states:
     note: 最终FV含12/12字节报告，已撤after-phy/at-link重复写；等待b223实测。
   usb_image_packaging:
     state: ok
-    evidence: b327实际Android/FD/FV、12生产PE/map、7个compiled USB actions、256KiB reserved区和47输入验证通过。
-    note: 镜像SHA256 e728af81d5e8e775965cec10c00a6cdb642f28f1a5e97b48c11b8b739ae6186f；未git add/commit，已保存未提交备份。
-    updated: '2026-10-31'
+    evidence: 当前镜像 SHA256 bd0faa5113bf8d2ce975cf1946a27555be615630981aeb39ed7ebbc89f36836d；原厂 USB、PMIC、SPMI、UFS 二进制与 FV 来源检查通过，两树 30 个源码锁文件一致。
+    updated: '2026-11-03'
   usb_device_dispatch:
-    state: partial
-    evidence: b228已驻留/协议发布，照片无需Dispatch/LoadImage恢复。
-    note: b227恢复原厂SPMI AND SMEM后已有实测改善；b229保留有界恢复供接口缺失时诊断。
-    updated: '2026-10-30'
+    state: ok
+    evidence: 原厂 UsbDeviceDxe 驻留与协议发布已核对；StartEx、HandleEvent、Stop 由上层在 TPL_APPLICATION 调用，当前候选 CDC/MSC 枚举和切换实机通过。
+    updated: '2026-11-03'
   usb_stock_replay:
     state: partial
     evidence: b329 UsbStockReplayDxe沿用原厂Send/HandleEvent身份；仅扩大CDC TX分块容量。
@@ -470,10 +449,9 @@ states:
     note: b326保持每次SETUP的DMA身份/归属检查，54场景及真实原厂连接回归通过。
     updated: '2026-10-31'
   usb_cable_lifecycle:
-    state: ok
-    evidence: b326初始化/测试/拔插返回且主机枚举成功。
-    note: b327模式切换必须Stop成功后释放DMA buffer；Stop失败锁切换并保留可能由DMA持有的内存。新模式长传输待实机。
-    updated: '2026-10-31'
+    state: patched
+    evidence: 多次真实 CDC 拔插自动恢复，含日志接收中断；线缆下降沿取消会话，200 ms 后在 pump 外执行原厂 Stop/StartEx。原文件 CRC 与再次切换通过，锁释放已核对；大文件替换上传中断尚未捕获。当前 USB 上层及 stock 硬件链按源码锁固定。
+    updated: '2026-11-03'
   usb_phy_clock:
     state: partial
     evidence: b325 Qs04，b326标准枚举成功；native PIPE/UTMI时序在真实ARM64验证。
@@ -481,26 +459,70 @@ states:
     updated: '2026-10-31'
   reboot_targets:
     state: partial
-    evidence: b341 reboot 命令支持 system/bootloader/recovery 并在 ACK 传输完成后执行；实机未执行 reboot，目的地仍未验证。PMIC 原因码读回 Device Error 的问题保留。
-    note: 只在精确核验后用SPMI完好ReadLong/WriteLong设置SID0:7148一字节并读回，保留bit0；全局旧补丁不改，PSCI/目标待实机。窗口显示具体失败阶段。
-    updated: '2026-11-02'
+    evidence: CDC reboot bootloader 已实机成功；system/recovery 目标未在本轮逐项验证。
+    updated: '2026-11-03'
   usb_msc:
-    state: partial
-    evidence: VID18D1/PID4EE1，BPB扇区4096，RAM快照5MiB；READ/容量/BOT/恢复/写拒绝通过生产测试。
-    note: 没有UFS writer能力。Refresh logfs export重新保存并快照；Windows盘符/FAT读取待实机。
-    updated: '2026-10-31'
+    state: ok
+    evidence: Windows 挂载共享 RAM，98 / 131333 字节文件主机 SHA256 校验通过；定时回 CDC 后同一文件 CRC 和 NSH 再执行通过。
+    updated: '2026-11-03'
   usb_cdc:
     state: ok
-    evidence: b341 实机：COM20 配置、help、Shell echo、日志读取成功，174412 字节用时 1.495 秒。修复原厂 Usbfn 完成客户端缓冲后全局 EP0 标记被 bulk/notify 完成清除、导致重复 status 或错误 stall 的问题。
-    note: MSC/BOT读路径仍为64KiB分块；写路径和RAM盘受只读保护策略不变。
-    updated: '2026-11-02'
+    evidence: COM20：命令、日志、分段上传与回读、Shell NSH 执行通过；512 字节整包回复通过。
+    updated: '2026-11-03'
   ram_disk:
     state: partial
-    evidence: b328保留纯RAM/FAT32/本机只读；新增64-2048MiB HII string输入，默认512MiB；释放旧盘后才能改大小。
-    note: USB连接时取消本地发布，停USB后重新挂载Shell/FILES；无第二份快照，off/重启删除。六种容量的FAT几何与边界通过生产头文件测试。
-    updated: '2026-11-01'
+    evidence: 64 / 128 MiB 实机精确分配，0 / 512 / 1024 / 66048 字节上传 CRC 通过；中断替换保留原文件。CDC 与本地只读文件系统共用一个 backing，MSC 使用同一内存。8192 MiB 仅几何/边界验证，实机大容量受可用内存限制。
+    updated: '2026-11-03'
   log_refresh:
     state: partial
     evidence: QR Log改名，正下方Refresh Log保存当前RAM，成功/失败均有窗口反馈；实际菜单索引和编译IFR通过。
     note: 单次手动保存，不周期刷盘；单文件不超512KiB，RAM日志256KiB。
     updated: '2026-10-31'
+  ram_upload:
+    state: ok
+    evidence: 默认 CDC line coding 3,000,000；文件 RX 最大 64 KiB。1 MiB 上传实测 2.08 秒（491 KiB/s），CRC 正确；提速来自接收块调整。
+    updated: '2026-11-03'
+  efi_remote_boot:
+    state: ok
+    evidence: boot <FSx:\path.efi> 在 ACK 完成后启动；33280 字节 ARM64 EFI 上传并启动返回实机通过；WinPE 镜像尚未准备。
+    updated: '2026-11-03'
+  acpi_runtime:
+    state: partial
+    evidence: 实机导出 15 张表，适用 checksum 与 FADT/DSDT/FACS 关联通过，MADT 8 CPU；DSDT OEM 仍含 SDM8550，WinPE 适配未完成。
+    updated: '2026-11-03'
+  smc_capabilities:
+    state: partial
+    evidence: 只读查询 PAS 指令能力与 QSEE feature 版本；没有执行 PAS 加载或认证绕过。
+    updated: '2026-11-03'
+  rpmb_read:
+    state: ok
+    evidence: 地址 0..3 原始 512 字节响应读取，类型/结果/地址/nonce 与前后计数器核对通过；无写/密钥/解锁 API，MAC 未认证。
+    updated: '2026-11-03'
+  ext4_read:
+    state: partial
+    evidence: 只读 Ext4Dxe 已集成；加密分区不解密，文件读取范围以当前挂载与实际成功路径为准。
+    updated: '2026-11-03'
+  haptics:
+    state: patched
+    evidence: 用户确认明确震动；TEST 独立页面支持时长和强度滑动条、三种模式。强度改按 DIRECT_PLAY gain 映射，档位触感仍需人工比较。
+    updated: '2026-11-03'
+  flash_led:
+    state: patched
+    evidence: 用户确认实机发光；短脉冲启停和配置恢复已验证，TEST 与 CDC 命令可用。
+    updated: '2026-11-03'
+  brightness_control:
+    state: partial
+    evidence: TEST/CDC 显示 DCS provider 状态；当前 provider 缺失，亮度调节未完成。
+    updated: '2026-11-03'
+  bluetooth_scan:
+    state: partial
+    evidence: TEST/CDC 列表已接入；classic/BLE provider 均缺失，真实设备扫描未完成。
+    updated: '2026-11-03'
+  gps_fix:
+    state: todo
+    evidence: 可查询平台/固件依赖；没有定位 fix 或 NMEA 数据证据。
+    updated: '2026-11-03'
+  gyro_samples:
+    state: todo
+    evidence: ADSP MDT 与配置文件只读可达；ADSP/Sensor 服务及实时采样尚未完成。
+    updated: '2026-11-03'

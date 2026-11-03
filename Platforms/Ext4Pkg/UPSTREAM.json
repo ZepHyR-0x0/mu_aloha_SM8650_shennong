@@ -1,0 +1,121 @@
+{
+  "repository": "https://github.com/tianocore/edk2-platforms",
+  "commit": "a46be4f60a0dd7b6aae0f46e6237a398a5f4151a",
+  "path": "Features/Ext4Pkg/",
+  "files": {
+    "Ext4.dsc.inc": {
+      "upstream_blob": "b560b9acbbea99ca0aec3396261ce124359b4c25",
+      "sha256": "43be8cae561da9836ceda2cd07561987e21e7e3624b4235d36afe4e2b7b26278"
+    },
+    "Ext4.fdf.inc": {
+      "upstream_blob": "fb36070860b417fb2f3ce8db85b279dad9e6795c",
+      "sha256": "b7a02f0f2599b19b96d9f599edf505bc4cc7af606be9e52888e5f3da12845485"
+    },
+    "Ext4Components.dsc.inc": {
+      "upstream_blob": "34401272a046970ab0582497692d91ee81c6d457",
+      "sha256": "31e85d72f31bbd41886bfee0b29724b5173224e050f226fb38e053f0db7629e3"
+    },
+    "Ext4Defines.dsc.inc": {
+      "upstream_blob": "b02eac59cf7aa6f39376ad01cafd7ee13ed5a9c8",
+      "sha256": "d52a99fd9156241ac2f541290d3dcc7fee4ab64fa6c97d7e68184c7584b0920a"
+    },
+    "Ext4Dxe/BlockGroup.c": {
+      "upstream_blob": "d5642a5f155cc292b11deffa69d17b3c13b4559f",
+      "sha256": "821a698e40ffdb3e349db19b87e338c73c119255d7e396a3b6440b1058c94a74"
+    },
+    "Ext4Dxe/BlockMap.c": {
+      "upstream_blob": "8fee4476a5ac6c9146c0904921d1feb3e64a7633",
+      "sha256": "af908abcca16c7ea909c455984d33ac3098a065f47cd0c2d261cb48a13b7b1ed"
+    },
+    "Ext4Dxe/Collation.c": {
+      "upstream_blob": "86ff1ac1b3b44d17d4e31b6cc1ee74b26ab367ff",
+      "sha256": "457d48e25b2f39bace4432d7151f6f45d49c302588f8e651b24da16a1402f0da"
+    },
+    "Ext4Dxe/Directory.c": {
+      "upstream_blob": "88f89a40534c7f92c5f8fdf7cbc98f1cf637309e",
+      "sha256": "d40b91089c7ddd349558ed5a5df4d3854245660f9725281905f744d3d142b595"
+    },
+    "Ext4Dxe/DiskUtil.c": {
+      "upstream_blob": "5df9ce5bafcf21d415475fe7d98f5343fa41831a",
+      "sha256": "769bfa9ecc8c2924226d42d9dac6cbf1e22685c27216151d4c363fdd4c12b224"
+    },
+    "Ext4Dxe/Ext4Disk.h": {
+      "upstream_blob": "70cb6c3209ddec4caf1f128a056da740156e9198",
+      "sha256": "29e9823e45d02ca1f4f3a3c26527e745ec764343a1f54ab26ba1ea9afe1a4923"
+    },
+    "Ext4Dxe/Ext4Dxe.c": {
+      "upstream_blob": "064286791d9e1ed9900018c21dfe1e4696f586be",
+      "sha256": "4d4ab0e5a2e3eb3c938f94bfa4feb0802d46a25f17243d4e3bbe499519f7e16d"
+    },
+    "Ext4Dxe/Ext4Dxe.h": {
+      "upstream_blob": "786e20f49fe15fe00f5b4310a7f4bf73cdedefcb",
+      "sha256": "ca3d98b047571a777b48631c9ebfd54fabaff78c11d991dc1e7945c6cda511aa"
+    },
+    "Ext4Dxe/Ext4Dxe.inf": {
+      "upstream_blob": "659e0c7cb5f4a6b02c3775dac92e44b13a8ed907",
+      "sha256": "13be411e974b060c497c53d116ecd642453e62573be77a91c95f338910bd0b90"
+    },
+    "Ext4Dxe/Ext4Dxe.uni": {
+      "upstream_blob": "7476fbf9bd709880ed023fe5307ebe30211afabb",
+      "sha256": "413a478843562b20bfbf1978bd2fc635a1e9141857f8c1b21b0e098ed9ebe6ce"
+    },
+    "Ext4Dxe/Extents.c": {
+      "upstream_blob": "2b82417c9e101294358cdc5cb323ddb41f2610c8",
+      "sha256": "4304fdf2f855481ea3a0695a652ac8460dd0a8ce195c72a9bec0bda2789ffa9a"
+    },
+    "Ext4Dxe/File.c": {
+      "upstream_blob": "677caf88fbdcd2628ea7202c6bf8c7e59025f9d6",
+      "sha256": "f0d9cd8808148fdd34a734b6126da356664a7561f6f76471f0c42db19e027cae"
+    },
+    "Ext4Dxe/Inode.c": {
+      "upstream_blob": "2f1a3a46c3020afb0d7075ee83ff1406f45874c9",
+      "sha256": "8bebfc5d92a34645632f00ea99f2731c145854f690b27402f9a0b142dce32636"
+    },
+    "Ext4Dxe/Partition.c": {
+      "upstream_blob": "316807497dd4007c61c835d2e30efeda652005fa",
+      "sha256": "c163f75e78b0268ab8e9747ef77ead522dfe0a36e27758b6a67f0e267ba88638"
+    },
+    "Ext4Dxe/Superblock.c": {
+      "upstream_blob": "604925b582c15aecbba4ab41d5c1e89f4ed64617",
+      "sha256": "2245bfe62bdb8cc6ec9e1b0469c0543929a1f2144727f565838689dc169e02bd"
+    },
+    "Ext4Dxe/Symlink.c": {
+      "upstream_blob": "d80cb9fff92ef3cd5e300698464c65781370c538",
+      "sha256": "9b594c3295d8cd3fba2f258b1291bd6889e2cd55a21b084135c37ffb1d209385"
+    },
+    "Ext4Libs.dsc.inc": {
+      "upstream_blob": "078183e0ccc650d764d67f967a880f7a00b094d7",
+      "sha256": "0534214a0920cbf1bca2e3d22c90ec9da75939febf5ae831d754435d02daf43a"
+    },
+    "Ext4Pkg.dec": {
+      "upstream_blob": "f1f8b39c3c7e147131a1f101c63d90fa045c2419",
+      "sha256": "0a1cfb0526ba00aebea1882f0473cfd3621c8f1e28cb2f691c43a004378d1d1c"
+    },
+    "Ext4Pkg.dsc": {
+      "upstream_blob": "0fed71c323b36c5ca883cfa8088a1e5529c34b46",
+      "sha256": "5be1d6fd747e2c7818f175bd020c9f085fa7796dde62aed690ddff5275100ffc"
+    },
+    "Ext4Pkg.uni": {
+      "upstream_blob": "abeadd8fd9260b48eabb08ee633cf70196135641",
+      "sha256": "7ef3d6815ec5c1d7db8ee1afad5894425cacb515175bbb2c9c771d21c0f36394"
+    }
+  },
+  "utf8_library": {
+    "repository": "https://github.com/tianocore/edk2",
+    "commit": "54e6a551912db30cf516954ce36f3fd6beac2207",
+    "files": {
+      "Library/BaseUcs2Utf8Lib/BaseUcs2Utf8Lib.c": {
+        "source": "RedfishPkg/Library/BaseUcs2Utf8Lib/BaseUcs2Utf8Lib.c",
+        "sha256": "d6eb0dcdf93d8fe99ffd3c82c190edd1f6f2de296c3f92ff225a818ed762085a"
+      },
+      "Library/BaseUcs2Utf8Lib/BaseUcs2Utf8Lib.inf": {
+        "source": "RedfishPkg/Library/BaseUcs2Utf8Lib/BaseUcs2Utf8Lib.inf",
+        "sha256": "2702b36f3718f936b3fda7d7041e3f378345c88e59fcfc69c421f9095529ea5d"
+      },
+      "Include/Library/BaseUcs2Utf8Lib.h": {
+        "source": "RedfishPkg/Include/Library/BaseUcs2Utf8Lib.h",
+        "sha256": "68f33df21fd4205182b329f9dfcdf546c14e336f52120dd4fedb70e0557028c6"
+      }
+    }
+  }
+}

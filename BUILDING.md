@@ -18,7 +18,7 @@ Windows 下双击 `build.cmd`（转交 WSL）。
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `MU_BASE` | `~/mu_aloha_base` | 基线仓库目录 |
-| `MU_BASE_REF` | `main` | 基线分支 |
+| `MU_BASE_REF` | `dev/update/mu202502` | 基线分支 |
 | `MU_WORK` | `~/mubuild-shennong` | ext4 编译树（基线在 `/mnt/*` 时才用） |
 | `MU_VENV` | `~/mu-venv-shennong` | Python venv |
 | `FORCE_INIT` | `0` | 置 1 强制重跑 `build_uefi.py --init` |
@@ -66,7 +66,21 @@ fastboot boot Build/ShennongPkg/xiaomi-shennong.img
 
 设备无 EDL；写坏分区难以恢复。崩溃时长按电源 10–15 秒。
 
+## USB 冻结和平台测试
+
+USB 构建仅保留原厂控制器链和现有 `UsbStockReplayDxe`。`USB_STOCK_CHAIN` 未设置
+或为 `1` 均使用这条链，其他值会拒绝构建。CDC 和只读 logfs 是同一 stock
+控制器的功能模式，GUI 默认请求 CDC。
+
+每次构建先通过 `scripts/usb_stock_lock.py` 校验 26 个冻结源文件及原厂二进制，
+构建完成后再检查镜像实际嵌入的 FV/FD 和 USB 模块。不要重生成 lock manifest
+来绕过失败；应恢复冻结基线。同步编译树时会清理废弃的非 stock 目录。
+
+可测试的硬件入口集中在 GUI `TEST`：震动、ACPI/SMC/TZ/PIL、电源读数、只读
+存储浏览、显示色条与触摸坐标。`HapticTest.efi`、`PlatformTest.efi` 也已打入 FV，
+可在 Shell 手动运行。离线校验不能证明 USB 枚举、机械震动或 PIL/TA 功能。
+
 ## 注意
 
-- 修改 `profiles/*.inc` 后必须运行 `bash scripts/profile.sh full`，否则 FDF 读的 `DXE.inc` 不会更新，新模块会静默丢失。
+- 本轮 `DXE.inc`、`APRIORI.inc` 已与 `profiles/*.full.inc` 同步。今后同时维护活动配置和 full 模板；若只改模板，仍须运行 `bash scripts/profile.sh full` 后构建。min profile 缺少完整 USB 链，最终镜像校验会拒绝它。
 - 构建类型默认 DEBUG；RELEASE 下 `DEBUG()`/`ASSERT()` 会被编译掉。

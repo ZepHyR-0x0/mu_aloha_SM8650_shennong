@@ -5,9 +5,10 @@ STATIC struct {
   UINT8 *Data;
   UINTN Bytes,At,Payload;
   BOOLEAN Base64;
-  CHAR8 Header[256],Footer[32],Action[128];
+  CHAR8 Header[512],Footer[32],Action[128];
   UINTN HeaderBytes,FooterBytes;
-  BOOLEAN Pending,Running,Cancelled,Reboot,AckSubmitted;
+  BOOLEAN Pending,Running,Cancelled,Reboot,Boot,AckSubmitted,ControlCommand,ModeSwitch;
+  UINT32 SwitchMode,ReturnSeconds;
 } mRemote;
 STATIC USB_REMOTE_EXECUTOR mRemoteExecute;
 STATIC VOID *mRemoteContext;
@@ -18,11 +19,17 @@ STATIC VOID StockCommandReset (VOID)
   if (mRemote.Running) { mRemote.Cancelled=TRUE;return; }
   if (mRemote.Data!=NULL) FreePool(mRemote.Data);
   ZeroMem(&mRemote,sizeof(mRemote));
+  mUsbModeSwitchQueued=FALSE;
 }
 STATIC VOID StockCommandText (CONST CHAR8 *Text)
 {
   mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"%a\r\n",Text);
 }
+STATIC VOID StockSessionReset(VOID)
+{
+  RamUploadCancel();mRamUpload.ReplyReady=FALSE;StockCommandReset();
+}
+STATIC VOID StockRamCommand(CONST CHAR8 *Action);
 STATIC EFI_STATUS EFIAPI StockSetRemoteExecutor (USB_BRINGUP_PROTOCOL *This, USB_REMOTE_EXECUTOR Execute, VOID *Context)
 {
   (VOID)This;
@@ -34,8 +41,16 @@ STATIC VOID StockCommandService (BOOLEAN Connected, BOOLEAN TxBusy)
   EFI_STATUS Status;UINTN Bytes=0;
   BOOLEAN LastLog,LogSync;
   if (mRemote.Running) return;
+  RamUploadService(Connected,!TxBusy && mRemote.HeaderBytes==0);
   if (!Connected) { StockCommandReset();return; }
-  if (!mRemote.Pending && !(mRemote.Reboot && mRemote.AckSubmitted && !TxBusy)) return;
+  if(mRamUpload.ReplyReady && !TxBusy && mRemote.HeaderBytes==0){
+    StockCommandText(mRamUpload.Reply);mRamUpload.ReplyReady=FALSE;return;
+  }
+  if(mRemote.Pending && mRemote.ControlCommand){
+    CHAR8 Action[128];CopyMem(Action,mRemote.Action,sizeof(Action));
+    StockCommandReset();StockRamCommand(Action);return;
+  }
+  if (!mRemote.Pending && !((mRemote.Reboot || mRemote.Boot) && mRemote.AckSubmitted && !TxBusy)) return;
   LastLog=AsciiStrCmp(mRemote.Action,"logcat-last")==0;
   LogSync=AsciiStrCmp(mRemote.Action,"logsync")==0;
   mRemote.Running=TRUE;
@@ -64,6 +79,11 @@ STATIC VOID StockCommandService (BOOLEAN Connected, BOOLEAN TxBusy)
     StockCommandReset();mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"ERR reboot %r\r\n",Status);
     return;
   }
+  if(mRemote.Boot){
+    StockCommandReset();
+    if(EFI_ERROR(Status))mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"ERR boot %r\r\n",Status);
+    else StockCommandText("OK boot returned");return;
+  }
   if (Bytes>BOOT_LOG_MAX_BYTES) { Bytes=0;Status=EFI_BAD_BUFFER_SIZE; }
   if (LastLog && EFI_ERROR(Status)) {
     StockCommandReset();mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"ERR logcat-last %r\r\n",Status);return;
@@ -87,6 +107,38 @@ STATIC BOOLEAN StockNumber (CONST CHAR8 *Text, UINT32 *Number)
     V=V*Base+D;
   }
   *Number=V;return TRUE;
+}
+STATIC VOID StockRamCommand(CONST CHAR8 *Action)
+{
+  EFI_STATUS S=EFI_INVALID_PARAMETER;UINT32 N,Crc;BOOLEAN Allocated;
+  if(AsciiStrCmp(Action,"ramdisk info")==0){
+    StockGetRamSize(NULL,&N,&Allocated);
+    mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),
+      "OK ramdisk requested_mib=%u bytes=%lu allocated=%u owner=%a mounted=%u upload=%u max_mib=8192\r\n",
+      N,(UINT64)mRamBytes,Allocated,mRamUsbOwned?"usb":mRamMutating?"upload":"local",mRamHandle!=NULL,mRamMutating);return;
+  }
+  if(AsciiStrnCmp(Action,"ramdisk create ",15)==0 && StockNumber(Action+15,&N))S=StockCreateRamDisk(NULL,N);
+  else if(AsciiStrCmp(Action,"ramdisk release")==0)S=RamRelease();
+  else if(AsciiStrnCmp(Action,"ramdisk hash ",13)==0){
+    S=RamFileHash(Action+13,&N,&Crc);
+    if(!EFI_ERROR(S)){
+      mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"OK ramdisk hash bytes=%u crc=0x%08x\r\n",N,Crc);return;
+    }
+  }else if(AsciiStrnCmp(Action,"put ",4)==0){
+    CHAR8 Path[128];UINTN Length=AsciiStrLen(Action+4),At;
+    CopyMem(Path,Action+4,Length+1);At=Length;
+    while(At!=0 && Path[At-1]!=' ')At--;
+    if(At==0 || !StockNumber(Path+At,&Crc))goto Done;
+    Path[--At]=0;while(At!=0 && Path[At-1]!=' ')At--;
+    if(At==0 || !StockNumber(Path+At,&N))goto Done;
+    Path[--At]=0;S=RamUploadBegin(Path,N,Crc);
+    if(!EFI_ERROR(S)){
+      mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"OK put ready %u window=65536 pad=1024\r\n",N);return;
+    }
+  }
+Done:
+  if(EFI_ERROR(S))mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"ERR ramdisk %r\r\n",S);
+  else StockCommandText("OK ramdisk");
 }
 STATIC EFI_STATUS StockPress (CONST CHAR8 *Argument)
 {
@@ -156,7 +208,40 @@ STATIC VOID StockCommandInput (CONST CHAR8 *Command, UINTN Length)
     if (Line[I]>='A' && Line[I]<='Z') Line[I]+='a'-'A';
   if (AsciiStrCmp(Name,"!long")==0) { StockCommandText("ERR command too long");return; }
   if (AsciiStrCmp(Name,"!busy")==0) { StockCommandText("ERR command queue full");return; }
-  if (AsciiStrCmp(Name,"help")==0) { StockCommandText("OK logcat | logcat-last | logsync | scrcat | press <key> | press scan <n> | press unicode <n> | reboot [system|bootloader|recovery] | shell <command>");return; }
+  if (AsciiStrCmp(Name,"help")==0) { StockCommandText("OK logcat | logcat-last | logsync | scrcat | press <key> | reboot [system|bootloader|recovery] | shell <command> | boot <mapped.efi> | test <args> | haptic <args> | rpmb-info | rpmb-read <address> <count> | ramdisk create <MiB> | ramdisk info | ramdisk hash <path> | ramdisk release | put <path> <bytes> <crc> | usb [cdc|ramdisk [return-seconds]|off]");return; }
+  if(AsciiStrnCmp(Name,"ramdisk ",8)==0 || AsciiStrnCmp(Name,"put ",4)==0){
+    if(mUsbModeSwitchBusy || mUsbModeSwitchQueued){StockCommandText("ERR ramdisk USB switch in progress");return;}
+    CopyMem(mRemote.Action,Name,AsciiStrLen(Name)+1);mRemote.Pending=mRemote.ControlCommand=TRUE;return;
+  }
+  if(AsciiStrnCmp(Name,"usb ",4)==0){
+    if(mUsbModeSwitchBusy || mUsbModeSwitchQueued){StockCommandText("ERR usb switch in progress");return;}
+    if(mRamMutating){StockCommandText("ERR usb upload active");return;}
+    if(AsciiStrCmp(Name+4,"cdc")==0)mRemote.SwitchMode=USB_MODE_CDC;
+    else if(AsciiStrCmp(Name+4,"off")==0)mRemote.SwitchMode=USB_MODE_DISABLED;
+    else if(AsciiStrCmp(Name+4,"ramdisk")==0)mRemote.SwitchMode=USB_MODE_RAMDISK;
+    else if(AsciiStrnCmp(Name+4,"ramdisk ",8)==0 && StockNumber(Name+12,&mRemote.ReturnSeconds) && mRemote.ReturnSeconds>=1 && mRemote.ReturnSeconds<=300)mRemote.SwitchMode=USB_MODE_RAMDISK;
+    else {StockCommandText("ERR usb mode or return-seconds (1..300)");return;}
+    if(mRemote.SwitchMode==USB_MODE_RAMDISK && mRamDisk==NULL){StockCommandText("ERR usb create ramdisk first");return;}
+    mRemote.ModeSwitch=TRUE;mUsbModeSwitchQueued=TRUE;mRemote.HeaderBytes=AsciiSPrint(mRemote.Header,sizeof(mRemote.Header),"OK usb mode=%u return_cdc_seconds=%u\r\n",mRemote.SwitchMode,mRemote.ReturnSeconds);return;
+  }
+  if(AsciiStrnCmp(Name,"test ",5)==0 || AsciiStrnCmp(Name,"haptic ",7)==0 ||
+     AsciiStrCmp(Name,"rpmb-info")==0 || AsciiStrnCmp(Name,"rpmb-read ",10)==0){
+    if(mRemoteExecute==NULL){StockCommandText("ERR application executor unavailable");return;}
+    BOOLEAN Haptic=AsciiStrnCmp(Name,"haptic ",7)==0,Test=AsciiStrnCmp(Name,"test ",5)==0;
+    CONST CHAR8 *Args=Haptic?Name+7:Test?Name+5:Name;
+    if(AsciiStrLen(Args)>90){StockCommandText("ERR test arguments too long");return;}
+    AsciiSPrint(mRemote.Action,sizeof(mRemote.Action),"shell FS0:\\%a.efi %a",Haptic?"HapticTest":"PlatformTest",Args);mRemote.Pending=TRUE;return;
+  }
+  if(AsciiStrnCmp(Name,"boot ",5)==0){
+    UINTN N=AsciiStrLen(Name);
+    if(mRemoteExecute==NULL || N<10 || Name[N-4]!='.' || RfUpper(Name[N-3])!='E' || RfUpper(Name[N-2])!='F' || RfUpper(Name[N-1])!='I'){
+      StockCommandText("ERR boot needs one mapped EFI path");return;
+    }
+    for(I=5;I<N;I++)if(Name[I]==' ' || Name[I]=='\t' || Name[I]=='<' || Name[I]=='>' || Name[I]=='|' || Name[I]=='&' || Name[I]==';' || Name[I]=='"'){
+      StockCommandText("ERR boot needs one mapped EFI path");return;
+    }
+    CopyMem(mRemote.Action,Name,N+1);mRemote.Boot=TRUE;StockCommandText("OK boot accepted");return;
+  }
   if (AsciiStrCmp(Name,"logcat-last")==0 || AsciiStrCmp(Name,"logsync")==0) {
     CopyMem(mRemote.Action,Name,AsciiStrLen(Name)+1);mRemote.Pending=TRUE;return;
   }
@@ -201,6 +286,7 @@ STATIC EFI_STATUS StockCommandRead (CHAR8 *Data, UINTN Capacity, UINTN *Bytes)
   UINT32 Value;
   if (Data==NULL || Bytes==NULL) return EFI_INVALID_PARAMETER;
   *Bytes=0;if (mRemote.Pending || mRemote.Running) return EFI_NOT_READY;
+  if((mRemote.ModeSwitch || mRemote.Boot) && mRemote.AckSubmitted)return EFI_NOT_READY;
   *Bytes=MIN(Capacity,Total-mRemote.At);
   for (I=0;I<*Bytes;I++) {
     At=mRemote.At+I;
@@ -218,7 +304,7 @@ STATIC EFI_STATUS StockCommandRead (CHAR8 *Data, UINTN Capacity, UINTN *Bytes)
   }
   mRemote.At+=*Bytes;
   if (Total!=0 && mRemote.At==Total) {
-    if (mRemote.Reboot) {
+    if (mRemote.Reboot || mRemote.Boot || mRemote.ModeSwitch) {
       mRemote.HeaderBytes=mRemote.FooterBytes=mRemote.Payload=mRemote.At=0;
       mRemote.AckSubmitted=TRUE;
     } else StockCommandReset();

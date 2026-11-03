@@ -231,8 +231,9 @@ struct {
   { 4, 4,            STRING_TOKEN (STR_MF_MENU_OP_DIAG),      FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_USB     },                           // USB Function
   { 5, 5,            STRING_TOKEN (STR_MF_MENU_OP_FILES),     FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_FILES },
   { 6, 6,            STRING_TOKEN (STR_MF_MENU_OP_POWER_STATUS), FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_POWER_STATUS },
-  { 7, 7,            STRING_TOKEN (STR_MF_MENU_OP_RETURN_BOOT), FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_RETURN_BOOT },
-  { 8, 8,            STRING_TOKEN (STR_MF_MENU_OP_EXIT),      FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_EXIT     }                            // Reboot
+  { 7, 7,            STRING_TOKEN (STR_MF_MENU_OP_TEST),      FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_TEST },
+  { 8, 8,            STRING_TOKEN (STR_MF_MENU_OP_RETURN_BOOT), FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_RETURN_BOOT },
+  { 9, 9,            STRING_TOKEN (STR_MF_MENU_OP_EXIT),      FRONT_PAGE_CONFIG_FORMSET_GUID, FRONT_PAGE_FORM_ID_EXIT     }                            // Reboot
 };
 
 // Frontpage form set GUID
@@ -1287,13 +1288,19 @@ CallFrontPage (
   // The LOG entry is not an HII form: draw it here and go back to the menu.
   //
   if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_FILES ||
-      mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_POWER_STATUS) {
+      mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_POWER_STATUS ||
+      mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_TEST) {
     if (mOSKProtocol != NULL) {
       mOSKProtocol->ShowKeyboard (mOSKProtocol, FALSE);
       mOSKProtocol->ShowKeyboardIcon (mOSKProtocol, FALSE);
     }
-    if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_FILES) FpFileBrowser (mSWMProtocol, mGop);
-    else FpPowerStatus (mSWMProtocol, mGop);
+    if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_FILES) {
+      FpFileBrowser (mSWMProtocol, mGop);
+    } else if (mFormMap[Count].FormId == FRONT_PAGE_FORM_ID_TEST) {
+      FpTestPage (mSWMProtocol, mGop);
+    } else {
+      FpPowerStatus (mSWMProtocol, mGop);
+    }
     mTerminateFrontPage = FALSE;
     mCurrentFormIndex = 0;
     Status = EFI_SUCCESS;
@@ -2149,6 +2156,14 @@ ProcessBootNext (
 // Do not reconnect the vendor stack or force RUN_STOP behind that owner's back.
 STATIC UINT32 mUsbPending = MAX_UINT32;
 STATIC UINT32 mRamSizePending=MAX_UINT32;
+STATIC BOOLEAN mUsbModeApplying;
+STATIC BOOLEAN FpUsbSwitchBusy(VOID)
+{
+  EFI_GUID Guid=USB_BRINGUP_PROTOCOL_GUID;USB_BRINGUP_PROTOCOL *Usb=NULL;
+  if(mUsbModeApplying || mUsbPending!=MAX_UINT32)return TRUE;
+  return !EFI_ERROR(gBS->LocateProtocol(&Guid,NULL,(VOID **)&Usb)) && Usb!=NULL &&
+    Usb->Revision>=8 && Usb->GetSwitchBusy!=NULL && Usb->GetSwitchBusy(Usb);
+}
 VOID FpGetRamSizeText (CHAR16 *Text, UINTN Bytes)
 {
   EFI_GUID Guid=USB_BRINGUP_PROTOCOL_GUID;USB_BRINGUP_PROTOCOL *Usb=NULL;
@@ -2160,13 +2175,14 @@ VOID FpGetRamSizeText (CHAR16 *Text, UINTN Bytes)
 }
 EFI_STATUS FpQueueRamSize (CONST CHAR16 *Text)
 {
+  if(FpUsbSwitchBusy())return EFI_NOT_READY;
   UINT32 MiB=0;UINTN I;EFI_STATUS Status=EFI_INVALID_PARAMETER;
   if (Text==NULL) return EFI_INVALID_PARAMETER;
   for (I=0;I<5 && Text[I]!=0;I++) {
     if (Text[I]<'0' || Text[I]>'9' || I==4) goto Done;
     MiB=MiB*10+(Text[I]-'0');
   }
-  if (I>=2 && I<=4 && MiB>=64 && MiB<=2048) { mRamSizePending=MiB;Status=EFI_SUCCESS; }
+  if (I>=2 && I<=4 && MiB>=64 && MiB<=8192) { mRamSizePending=MiB;Status=EFI_SUCCESS; }
 Done:
   return Status;
 }
@@ -2178,6 +2194,7 @@ EFI_STATUS FpRouteRamSize (CONST CHAR16 *Text)
 }
 VOID FpGetUsbModeText (CHAR16 *Text, UINTN Bytes)
 {
+  if(FpUsbSwitchBusy()){UnicodeSPrint(Text,Bytes,L"Current mode: switching...");return;}
   EFI_GUID Guid=USB_BRINGUP_PROTOCOL_GUID;
   USB_BRINGUP_PROTOCOL *Usb=NULL;
   UINT32 Mode=USB_MODE_DISABLED;
@@ -2201,6 +2218,7 @@ VOID FpGetUsbModeText (CHAR16 *Text, UINTN Bytes)
 }
 EFI_STATUS FpQueueUsbMode (EFI_QUESTION_ID QuestionId)
 {
+  if(FpUsbSwitchBusy())return EFI_NOT_READY;
   EFI_GUID Guid = USB_BRINGUP_PROTOCOL_GUID;
   USB_BRINGUP_PROTOCOL *Usb = NULL;
   EFI_STATUS Status = gBS->LocateProtocol (&Guid, NULL, (VOID **)&Usb);
@@ -2256,6 +2274,7 @@ BOOLEAN FpGetRamAllocated (VOID)
 }
 EFI_STATUS FpQueueUsbUiMode (UINT8 UiMode)
 {
+  if(FpUsbSwitchBusy())return EFI_NOT_READY;
   UINT32 Mapped = USB_MODE_DISABLED;
   switch (UiMode) {
     case 0: mUsbPending = Mapped = USB_MODE_DISABLED; break;
@@ -2270,12 +2289,13 @@ EFI_STATUS FpQueueUsbUiMode (UINT8 UiMode)
 }
 EFI_STATUS FpQueueRamDelete (VOID)
 {
+  if(FpUsbSwitchBusy())return EFI_NOT_READY;
   // RAM_RELEASE makes the driver stop the active RAM device (DISABLED) before
   // freeing pages; if the RAM disk is not currently owned by USB it only frees.
   mUsbPending = USB_MODE_RAM_RELEASE;
   return EFI_SUCCESS;
 }
-STATIC VOID FpApplyUsbMode (VOID)
+STATIC VOID FpApplyUsbModeInternal (VOID)
 {
   EFI_GUID Guid = USB_BRINGUP_PROTOCOL_GUID;
   USB_BRINGUP_PROTOCOL *Usb = NULL;
@@ -2299,6 +2319,14 @@ STATIC VOID FpApplyUsbMode (VOID)
   mTerminateFrontPage=FALSE;mResetRequired=FALSE;
   if (EFI_ERROR(Status) && Status!=EFI_ALREADY_STARTED)
     SwmDialogsMessageBox (L"USB",L"USB mode could not start. See QR Log.",L"",SWM_MB_OK,0,&Result);
+}
+
+STATIC VOID FpApplyUsbMode (VOID)
+{
+  if(mUsbModeApplying)return;
+  mUsbModeApplying=TRUE;
+  FpApplyUsbModeInternal();
+  mUsbModeApplying=FALSE;
 }
 
 EFI_STATUS

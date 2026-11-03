@@ -13,6 +13,7 @@
 #include "PowerStatus.h"
 #include "BootLog.h"
 #include "FrontPage.h"
+#include "FrontPageEventService.h"
 
 #define PS_POWER 1
 #define PS_PLATFORM 2
@@ -202,6 +203,7 @@ VOID FpPowerStatus (MS_SIMPLE_WINDOW_MANAGER_PROTOCOL *Swm, EFI_GRAPHICS_OUTPUT_
       UnicodeSPrint (P->Message, sizeof (P->Message), L"Save to logfs: %r", Status);
       Dirty = TRUE;
     }
+    FpServiceEvents ();
     gBS->Stall (20000);
   }
   Swm->ActivateWindow (Swm, P->Window, FALSE);

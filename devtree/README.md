@@ -9,7 +9,7 @@
 用途是把“这个 SoC 上哪些块已经点亮、卡在谁身上、地址有没有打架”从散落的
 Markdown/日志变成一张能点、能搜、能追依赖链的图。
 
-[打开 b327 USB枚举与MSC/CDC/RAM盘状态图](examples/out/shennong.html)
+[打开当前设备能力与共享 RAM 状态图](examples/out/shennong.html)
 
 ```
 tree.yaml ─┐
@@ -31,12 +31,7 @@ python devtree/devtree_viz.py \
 python devtree/devtree_viz.py tree.yaml state.yaml --check --strict
 ```
 
-示例对齐2026-10-31：**b326 USB标准枚举已实机确认**，18D1:D00D/OK，固件记录RESET、CONNECT_DONE、SET_ADDRESS与SET_CONFIGURATION。
-当前b327增加MSC只读logfs、CDC串口日志、512MiB FAT32 RAM盘、256KiB日志和QR Log/Refresh Log；生产状态机、实际原厂ARM64、盘面和最终镜像验证通过，功能仍待实机。
-当前SPMI的RMW方法154C是旧空补丁，导致PMIC setter假Success。重启只对核验后的SID0:7148用完好单字节读写并读回，保留全局补丁和UFS写保护，目标待实测。
-USB logfs始终只读5MiB快照；RAM盘可写且只在RAM，停USB后Shell/FILES可只读查看。开启分配512MiB，切模式保留，off/重启丢失，切换前安全弹出。
-主菜单QR Log下方Refresh Log把当前RAM日志保存到严格验证logfs；旧USB FS TEST/LOGSAVE移除。本轮未git add/commit。
-`sync_b327.py`同步107节点及证据；详细学习报告见主仓库`docs/USB移植完整报告-2026-10-31.md`。测试日志仍是`log/log-stock.txt`。
+当前数据更新于 2026-11-03，119 个节点：CDC 共享 RAM 上传与 Shell 执行、震动、闪光灯、ACPI/SMC/TZ 与 RPMB 只读；未完成的无线、传感器与 USB 恢复项单独标记。HTML 自包含，状态数据不附带本地日志或检测报告。
 
 > 示例里 **工作状态** 与 **补丁状态** 分开记录：
 > 例如 UFS 是“外部 DEBUG 二进制 + 可用”，ClockDxe 是“4 字节指令补丁 + 可用”，

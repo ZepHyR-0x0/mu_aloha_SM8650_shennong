@@ -81,7 +81,8 @@ STATIC EFI_STATUS RemoteShell(CONST CHAR8 *Command,CHAR8 *Output,UINTN Capacity,
   EFI_LOADED_IMAGE_PROTOCOL *Image;EFI_STATUS Status;
   EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *SavedOut,*SavedErr;EFI_HANDLE SavedOutHandle,SavedErrHandle;
   CHAR16 Options[256];
-  if (Command==NULL || *Command==0 || Output==NULL || Bytes==NULL || Capacity==0) return EFI_INVALID_PARAMETER;
+  BOOLEAN Launch=Output==NULL && Capacity==0;
+  if (Command==NULL || *Command==0 || Bytes==NULL || (!Launch && (Output==NULL || Capacity==0))) return EFI_INVALID_PARAMETER;
   *Bytes=0;
   Status=GetSectionFromAnyFv(&ShellFile,EFI_SECTION_PE32,0,&Section,&SectionBytes);
   if (EFI_ERROR(Status)) return Status;
@@ -91,6 +92,11 @@ STATIC EFI_STATUS RemoteShell(CONST CHAR8 *Command,CHAR8 *Output,UINTN Capacity,
   if (EFI_ERROR(Status)) { gBS->UnloadImage(Shell);return Status; }
   UnicodeSPrint(Options,sizeof(Options),L"Shell.efi -nostartup -nointerrupt -nomap -noversion -exit %a",Command);
   Image->LoadOptions=Options;Image->LoadOptionsSize=(UINT32)StrSize(Options);
+  if(Launch){
+    // A boot application can remain running or call ExitBootServices. Keep
+    // the real system console; no capture protocol/stack context is installed.
+    Status=gBS->StartImage(Shell,NULL,NULL);(VOID)gBS->UnloadImage(Shell);return Status;
+  }
   ZeroMem(&mCapture,sizeof(mCapture));mCapture.Data=Output;mCapture.Capacity=Capacity;
   ZeroMem(&mCaptureMode,sizeof(mCaptureMode));mCaptureMode.MaxMode=1;mCaptureMode.Attribute=7;
   mCaptureOut=(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL){CaptureReset,CaptureOutput,CaptureTest,CaptureQuery,CaptureSetMode,
@@ -114,6 +120,7 @@ STATIC EFI_STATUS EFIAPI RemoteExecute(VOID *Context,CONST CHAR8 *Command,CHAR8 
   if (Bytes==NULL || Command==NULL) return EFI_INVALID_PARAMETER;
   *Bytes=0;
   if (AsciiStrnCmp(Command,"shell ",6)==0) return RemoteShell(Command+6,Output,Capacity,Bytes);
+  if (AsciiStrnCmp(Command,"boot ",5)==0) return RemoteShell(Command+5,NULL,0,Bytes);
   if (AsciiStrCmp(Command,"reboot system")==0) {
     gRT->ResetSystem(EfiResetCold,EFI_SUCCESS,0,NULL);return EFI_DEVICE_ERROR;
   }

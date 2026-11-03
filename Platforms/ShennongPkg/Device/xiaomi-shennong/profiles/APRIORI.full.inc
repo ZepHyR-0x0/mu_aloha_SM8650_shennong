@@ -187,6 +187,11 @@ INF QcomPkg/PatchedBinaries/ClockDxe.inf
 #    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/SPMIDxe/SPMIDxe.inf
     INF QcomPkg/PatchedBinaries/SPMIDxe.inf
     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ResetRuntimeDxe/ResetRuntimeDxe.inf
+    # ProjectInfo publishes only when its ADC-install event fires. Register
+    # both stock notification and cache wrapper before Pmic installs ADC.
+    INF AndromedaPkg/Driver/ReadOnlyStorageDxe/ReadOnlyStorageDxe.inf
+    INF AndromedaPkg/Driver/ProjectInfoCacheDxe/ProjectInfoCacheDxe.inf
+    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ProjectInfoDxe/ProjectInfoDxe.inf
 #    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PmicDxe/PmicDxeLa.inf
     # PmicDxeLa DISABLED: it prints 'Mi Haptics' and then takes a synchronous
 # external abort inside SPMI.dll, because SPMIDxe already failed with
@@ -223,6 +228,7 @@ INF QcomPkg/PatchedBinaries/PmicDxeLa.inf
     #   ConfigWords: Error Reading from Partition: Not Found
     # It reads a partition; the block stack has to exist first.
     #
+    # Register write guards before any UFS/partition/FAT handles are published.
     INF MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
     INF MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/IsolatedBinaries/UFSDxe.inf
@@ -295,8 +301,8 @@ INF QcomPkg/PatchedBinaries/PmicDxeLa.inf
             SECTION UI = "QRKSDxe"
     }
 
-    #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILProxyDxe/PILProxyDxe.inf
-    #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILDxe/PILDxe.inf
+    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILProxyDxe/PILProxyDxe.inf
+    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILDxe/PILDxe.inf
     #
     # SPSSDxe moved up to just after UFSDxe, before TzDxeLA.
     #
@@ -335,7 +341,10 @@ INF QcomPkg/PatchedBinaries/PmicDxeLa.inf
     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/SPIDxe/SPIDxe.inf
     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PmicGlinkDxe/PmicGlinkDxe.inf
     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbPwrCtrlDxe/UsbPwrCtrlDxe.inf
-#    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/QcomChargerDxe/QcomChargerDxeLA.inf
+    # Native ChargerEx binds its backend once. Board identity and charger must
+    # run first; otherwise a later healthy backend leaves the gate closed.
+    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/QcomChargerDxe/QcomChargerDxeLA.inf
+    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ChargerExDxe/ChargerExDxe.inf
 #    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/PatchedBinaries/QcomChargerDxeLA.inf
 
     #
@@ -351,7 +360,8 @@ INF QcomPkg/PatchedBinaries/PmicDxeLa.inf
     # does honour the DEPEX, so they wait for the function driver instead of
     # racing it.
     #
-#     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbfnDwc3Dxe/UsbfnDwc3Dxe.inf # b198: stock USB function driver removed
+    # Stock USB function driver is the sole controller owner.
+#INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbfnDwc3Dxe/UsbfnDwc3Dxe.inf
 #     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciPciEmulationDxe/XhciPciEmulationDxe.inf # b198: direct USB2 controller owner
 
 #   INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciDxe/XhciDxe.inf
@@ -392,7 +402,6 @@ INF QcomPkg/PatchedBinaries/PmicDxeLa.inf
     # in the APRIORI list at all, which left the order to FV discovery.
     #
 #     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbMsdDxe/UsbMsdDxe.inf # b198: direct USB2 controller owner
-    #INF AndromedaPkg/Driver/UsbDevStartDxe/UsbDevStartDxe.inf
     INF AndromedaPkg/Driver/GcdProbeDxe/GcdProbeDxe.inf
 #    INF AndromedaPkg/Driver/TouchProbeDxe/TouchProbeDxe.inf   # disabled: reading TLMM resets the device
 #   INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/LimitsDxe/LimitsDxe.inf

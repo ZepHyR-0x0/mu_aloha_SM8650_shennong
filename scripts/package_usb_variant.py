@@ -10,7 +10,7 @@ import shutil
 import struct
 
 p = argparse.ArgumentParser(description=__doc__)
-p.add_argument('stack', choices=('direct', 'stock'))
+p.add_argument('stack', choices=('stock',))
 p.add_argument('output', type=Path)
 p.add_argument('--build', type=int, required=True)
 default_source = os.environ.get('MU_WORK') or str(Path.home() / 'mubuild-shennong')
@@ -22,7 +22,7 @@ root = Path(__file__).resolve().parents[1]
 out = a.output / a.stack
 out.mkdir(parents=True, exist_ok=True)
 build = source / f'Build/ShennongPkg/{a.build_type}_CLANGPDB'
-names = {'direct': f'xiaomi-shennong-b{a.build}-direct.img', 'stock': f'xiaomi-shennong-b{a.build}-stock-chain.img'}
+names = {'stock': f'xiaomi-shennong-b{a.build}-stock-chain.img'}
 image_name = names[a.stack]
 image = source / 'Build/ShennongPkg/xiaomi-shennong.img'
 data = image.read_bytes()
@@ -40,7 +40,7 @@ for src, name in ((image, image_name), (fd, fd.name),
                   (source / 'build.log', 'build.log')):
     shutil.copy2(src, out / name)
 shutil.copy2(image, root / 'Build/ShennongPkg' / image_name)
-for module in ('UsbDevStartDxe', 'UsbfnDwc3Ref', 'UsbStockReplayDxe', 'SimpleWindowManagerDxe', 'ArmCpuDxe'):
+for module in ('UsbStockReplayDxe', 'SimpleWindowManagerDxe', 'ArmCpuDxe'):
     maps = [path for path in (build / 'AARCH64').rglob(module + '.map') if path.parent.name == 'OUTPUT']
     if len(maps) == 1:
         shutil.copy2(maps[0], out / (module + '.map'))

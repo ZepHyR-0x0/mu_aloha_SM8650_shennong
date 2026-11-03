@@ -301,8 +301,8 @@ INF QcomPkg/PatchedBinaries/PmicDxeLa.inf
             SECTION UI = "QRKSDxe"
     }
 
-    #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILProxyDxe/PILProxyDxe.inf
-    #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILDxe/PILDxe.inf
+    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILProxyDxe/PILProxyDxe.inf
+    INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILDxe/PILDxe.inf
     #
     # SPSSDxe moved up to just after UFSDxe, before TzDxeLA.
     #
@@ -360,12 +360,8 @@ INF QcomPkg/PatchedBinaries/PmicDxeLa.inf
     # does honour the DEPEX, so they wait for the function driver instead of
     # racing it.
     #
-    # Qualcomm UsbfnDwc3Dxe removed: StartController is an eight byte stub and the core init
-# hangs in DEPSTARTCFG. The ported reference driver replaces it.
+    # Stock USB function driver is the sole controller owner.
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbfnDwc3Dxe/UsbfnDwc3Dxe.inf
-!if $(USB_STOCK_CHAIN) == 0
-INF AndromedaPkg/Driver/UsbfnDwc3Ref/UsbfnDwc3Ref.inf
-!endif
 #     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciPciEmulationDxe/XhciPciEmulationDxe.inf # b198: direct USB2 controller owner
 
 #   INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciDxe/XhciDxe.inf
@@ -406,7 +402,6 @@ INF AndromedaPkg/Driver/UsbfnDwc3Ref/UsbfnDwc3Ref.inf
     # in the APRIORI list at all, which left the order to FV discovery.
     #
 #     INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbMsdDxe/UsbMsdDxe.inf # b198: direct USB2 controller owner
-    #INF AndromedaPkg/Driver/UsbDevStartDxe/UsbDevStartDxe.inf
     INF AndromedaPkg/Driver/GcdProbeDxe/GcdProbeDxe.inf
 #    INF AndromedaPkg/Driver/TouchProbeDxe/TouchProbeDxe.inf   # disabled: reading TLMM resets the device
 #   INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/LimitsDxe/LimitsDxe.inf

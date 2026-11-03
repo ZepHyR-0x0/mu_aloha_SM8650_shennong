@@ -17,6 +17,11 @@
   {0xb3275120,0x6f0a,0x45de,{0x81,0x2c,0x54,0x41,0x4d,0x52,0x41,0x4d}}
 
 typedef struct _USB_BRINGUP_PROTOCOL USB_BRINGUP_PROTOCOL;
+typedef struct {
+  UINT64 Bytes;
+  UINT32 RequestedMiB;
+  BOOLEAN Allocated, UsbOwned, UploadActive, LocalMounted;
+} USB_RAM_DISK_INFO;
 typedef EFI_STATUS (EFIAPI *USB_REMOTE_EXECUTOR)(VOID *Context, CONST CHAR8 *Command,
                                                CHAR8 *Output, UINTN Capacity, UINTN *Bytes);
 struct _USB_BRINGUP_PROTOCOL {
@@ -36,6 +41,11 @@ struct _USB_BRINGUP_PROTOCOL {
   EFI_STATUS (EFIAPI *SetShellConsole)(IN USB_BRINGUP_PROTOCOL *This, BOOLEAN Enable);
   // Revision 6: application-owned command execution, outside the USB event pump.
   EFI_STATUS (EFIAPI *SetRemoteExecutor)(IN USB_BRINGUP_PROTOCOL *This, USB_REMOTE_EXECUTOR Execute, VOID *Context);
+  // Revision 7: local/CDC/MSC use one allocation; 64..8192 MiB, no fallback.
+  EFI_STATUS (EFIAPI *CreateRamDisk)(IN USB_BRINGUP_PROTOCOL *This, UINT32 MiB);
+  EFI_STATUS (EFIAPI *GetRamInfo)(IN USB_BRINGUP_PROTOCOL *This, USB_RAM_DISK_INFO *Info);
+  // Revision 8: queued or active mode changes exclude other changes.
+  BOOLEAN (EFIAPI *GetSwitchBusy)(IN USB_BRINGUP_PROTOCOL *This);
 };
 
 #endif

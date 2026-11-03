@@ -91,7 +91,7 @@ python cdc-console.py --shell --local-echo
 | --- | --- |
 | `--port`, `-p` | 指定 COM 口，如 `COM20` |
 | `--list` | 只列出串口，不打开 |
-| `--baud` | 波特率，默认 `115200` |
+| `--baud` | CDC line coding，默认 `3000000`，可覆盖 |
 | `--timeout` | 单条命令超时（秒），默认 `120` |
 | `--open-timeout` | 打开端口超时（秒），默认 `15` |
 | `--command`, `-c` | 执行单条命令后退出 |
@@ -102,13 +102,49 @@ python cdc-console.py --shell --local-echo
 ## 注意事项
 
 - 命令必须是非空、单行 ASCII，长度不超过 127 字节。
-- 一条命令的响应正文超过约 1 KiB 时，不要走普通命令模式去读 Shell，请用 `--shell`。
+- Shell 命令输出按 BEGIN/END 长度读取，最多 256 KiB；交互式程序使用 `--shell`。
 - `reboot bootloader`、`reboot recovery` 会改变设备状态，自动化脚本里要谨慎。
 - `--shell` 不能和 `--command` 同时使用。
 
-## 实测记录（2026-11-02）
+## RAM 文件上传与引导
 
-- `python cdc-console.py --list`：正常列出 `COM20`，识别为 `VID:PID=18D1:4EE8`。
-- 两个入口的 `--help` 均正常输出全部参数。
-- CDC 依赖导入正常，`cdc-deps/pyserial 3.5` 可加载。
-- 实测 `python cdc-control.py -c help` 时 COM20 返回 `PermissionError(13)`，原因是该端口正被其他进程占用，关闭占用方后即可重试。
+
+CDC、USB Function 和本地文件系统共用同一块 RAM，不复制盘面。上传时独占 RAM，禁止切换或释放；MSC 接管时撤销本地挂载，归还后恢复本地只读访问。同容量 create 复用原盘，改变容量需要先 release。
+
+固件与客户端默认 CDC line coding 为 3,000,000 8N1，客户端可用 `--baud 115200` 覆盖。baud 配置本身不限制这条 USB 数据路径；文件接收按剩余窗口批量提交，单次最大 64 KiB，末窗补零最多 1023 字节，仍校验 CRC 并在断线时取消未提交替换。当前候选 1 MiB 上传与 CRC 回读实测 2.08 秒，约 491 KiB/s。
+
+正常停止后使用原厂 Stop/StartEx 流程，仅在 halt 未确认时尝试原厂初始化；停止失败保留 DMA 缓冲和 RAM。同模式 CDC 停止/重启与共享文件 CRC 回读已通过。
+
+切换从排队开始禁止其他切换、RAM 大小修改和释放。TEST 显示 switching 状态；驱动对重入返回 Already Started。回切先等待当前控制/BOT 事务完成，最多 5 秒；成功、拔线、超时和停止失败均完成收尾并释放切换锁。停止失败时保留 DMA 缓冲，后续重连或再次请求可重试。CDC 检测实际线缆下降沿，取消会话，并在 pump 外经过 200 ms 后走原厂 Stop/StartEx；普通总线 reset 不触发这条重建。多次真实 CDC 拔插后自动恢复，含日志接收中断；原文件 CRC 保留与再次切换通过。大文件替换上传中拔线的实机验收尚未捕获。
+
+当前 USB 上层候选与 stock 硬件链按本页镜像及源码锁固定，后续平台推进沿用这个版本。
+
+```text
+ramdisk create 64
+ramdisk info
+ramdisk hash EFI/BOOT/BOOTAA64.EFI
+shell map -r
+shell FSx:\path\script.nsh
+boot FSx:\EFI\BOOT\BOOTAA64.EFI
+usb ramdisk 60
+usb cdc
+ramdisk release
+rpmb-info
+rpmb-read 0 1
+test platform
+test devices
+test wireless-scan
+test bluetooth
+test sensors
+test brightness-status
+haptic level 500 75 direct
+```
+
+```bash
+python tools/cdc-control.py --port COM20 --upload path/to/file --dest EFI/BOOT/BOOTAA64.EFI
+python tools/cdc-console.py --port COM20
+```
+
+`FSx` 从 `shell map -r` 查找，不能固定盘符。`boot` 只接受单个映射 `.efi` 路径，ACK 后启动并使用真实控制台；客户端保持串口等待返回，断连或未观察到返回会明确报告。NSH 使用 `shell` 命令执行。FAT32 单文件最多 4294967295 字节；大盘不等于可存放大于 4 GiB 的单文件。8 GiB 上限按实际可用内存分配，不自动缩容。
+
+WinPE 镜像尚未准备；当前已验证 RAM 文件上传、NSH 与返回式 ARM64 EFI，引导 WinPE 和设备驱动适配仍待实机完成。

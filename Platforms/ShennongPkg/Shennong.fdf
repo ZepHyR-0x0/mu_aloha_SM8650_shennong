@@ -148,6 +148,8 @@ READ_LOCK_STATUS   = TRUE
   # to dump diagnostics when no input device worked, and it now fights the user
   # for the prompt. Nothing else about the shell changes.
   INF ShellPkg/Application/Shell/Shell.inf
+  INF AndromedaPkg/Application/HapticTest/HapticTest.inf
+  INF AndromedaPkg/Application/PlatformTest/PlatformTest.inf
   INF MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
 #  INF MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
 #  INF MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf

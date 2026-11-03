@@ -1,10 +1,10 @@
 [Components.common]
 AndromedaPkg/Driver/ReadOnlyStorageDxe/ReadOnlyStorageDxe.inf
+Ext4Pkg/Ext4Dxe/Ext4Dxe.inf
 AndromedaPkg/Driver/ProjectInfoCacheDxe/ProjectInfoCacheDxe.inf
+AndromedaPkg/Driver/WirelessSurveyDxe/WirelessSurveyDxe.inf
 AndromedaPkg/Driver/UsbStockReplayDxe/UsbStockReplayDxe.inf
 $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbConfigDxe/UsbConfigDxe.inf
-AndromedaPkg/Driver/UsbDevStartDxe/UsbDevStartDxe.inf
-AndromedaPkg/Driver/UsbfnDwc3Ref/UsbfnDwc3Ref.inf
 AndromedaPkg/Driver/GcdProbeDxe/GcdProbeDxe.inf
 AndromedaPkg/Driver/EarlyBdsArchDxe/EarlyBdsArchDxe.inf
 #AndromedaPkg/Driver/TouchProbeDxe/TouchProbeDxe.inf   # disabled: reading TLMM resets the device

@@ -43,7 +43,7 @@ case "$BASE" in
   /mnt/*)
     mkdir -p "$WORK"
     echo "==> 同步编译树 $BASE -> $WORK"
-    rsync -a --exclude=Build --exclude=.git --exclude=.venv "$BASE/" "$WORK/"
+    rsync -a --delete --exclude=Build --exclude=.git --exclude=.venv "$BASE/" "$WORK/"
     SRC="$WORK"
     ;;
   *)
@@ -87,6 +87,11 @@ IMG="$SRC/Build/ShennongPkg/$DEVICE.img"
 [ -s "$IMG" ] || { echo "!! 未生成镜像: $IMG" >&2; exit 1; }
 SIZE=$(stat -c%s "$IMG")
 [ "$SIZE" -gt 1048576 ] || { echo "!! 镜像过小: $SIZE B" >&2; exit 1; }
+
+python3 "$SRC/scripts/verify_usb_image.py" "$IMG" --stack stock \
+  --fv "$SRC/Build/ShennongPkg/${BUILD_TYPE}_CLANGPDB/FV/FVMAIN.Fv" \
+  --fd "$SRC/Build/ShennongPkg/${BUILD_TYPE}_CLANGPDB/FV/SM8650_EFI.fd" \
+  --stock-root "$SRC/Platforms/ShennongPkg/Device/xiaomi-shennong/Binaries/QcomPkg/Drivers"
 
 # 6) 产物回拷到仓库
 mkdir -p "$REPO/Build/ShennongPkg"

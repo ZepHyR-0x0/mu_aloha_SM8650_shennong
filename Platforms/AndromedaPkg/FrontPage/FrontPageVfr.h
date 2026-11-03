@@ -39,6 +39,7 @@
 #define FRONT_PAGE_FORM_ID_LOGREAD   0x000B
 #define FRONT_PAGE_FORM_ID_RETURN_BOOT 0x000C
 #define FRONT_PAGE_FORM_ID_POWER_STATUS 0x000D
+#define FRONT_PAGE_FORM_ID_TEST      0x000F
 
 // Front Page triggers the following actions
 //

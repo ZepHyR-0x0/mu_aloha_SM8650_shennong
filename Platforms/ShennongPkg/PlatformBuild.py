@@ -252,10 +252,8 @@ class PlatformBuilder(UefiBuilder, BuildSettingsManager):
         self.env.SetValue("ACTIVE_PLATFORM", PackageName+"/"+PlatformName+".dsc", "Platform Hardcoded")
 ## aloha patch end
         self.env.SetValue("TARGET_ARCH", "AARCH64", "Platform Hardcoded")
-        stock_usb = os.environ.get("USB_STOCK_CHAIN", "0")
-        if stock_usb not in ("0", "1"):
-            raise ValueError("USB_STOCK_CHAIN must be 0 or 1")
-        self.env.SetValue("BLD_*_USB_STOCK_CHAIN", stock_usb, "USB stock replay selection")
+        if os.environ.get("USB_STOCK_CHAIN", "1") != "1":
+            raise ValueError("USB_STOCK_CHAIN is retired; only the locked stock chain is supported")
         self.env.SetValue("TOOL_CHAIN_TAG", "CLANGPDB", "set default to clangpdb")
         self.env.SetValue("EMPTY_DRIVE", "FALSE", "Default to false")
         self.env.SetValue("RUN_TESTS", "FALSE", "Default to false")
@@ -280,12 +278,41 @@ class PlatformBuilder(UefiBuilder, BuildSettingsManager):
         return 0
 
     def PlatformPreBuild(self):
+        from pathlib import Path
+        import hashlib, json
+        root = self.GetWorkspaceRoot()
+        def digest(path):
+            data = path.read_bytes()
+            if path.suffix.lower() in ('.c', '.h', '.inf'):
+                data = data.replace(b'\r\n', b'\n')
+            return hashlib.sha256(data).hexdigest()
+        root = Path(root)
+        manifest = json.loads((root / 'scripts/usb-stock-lock.json').read_text(encoding='utf-8'))
+        failures = [name for name, expected in manifest['files'].items()
+                    if not (root / name).is_file() or digest(root / name) != expected]
+        dev = root / 'Platforms/ShennongPkg/Device/xiaomi-shennong'
+        for name in ('DXE.inc', 'DXE.dsc.inc', 'APRIORI.inc',
+                     'profiles/DXE.full.inc', 'profiles/APRIORI.full.inc'):
+            text = (dev / name).read_text(encoding='utf-8')
+            if any(token in text for token in ('USB_STOCK_CHAIN', 'UsbfnDwc3Ref/', 'UsbDevStartDxe/')):
+                failures.append(str(dev / name))
+        for name in ('UsbfnDwc3Ref', 'UsbDevStartDxe'):
+            if (root / 'Platforms/AndromedaPkg/Driver' / name).exists():
+                failures.append('retired USB source directory: ' + name)
+        if failures:
+            raise ValueError('Frozen stock USB changed; restore the baseline before building: ' + ', '.join(failures))
         return 0
 
     def PlatformPostBuild(self):
 ## aloha patch start
         logging.info("Building Android Boot Image.")
         PostBuild.makeAndroidImage(self.GetOutputBinDirectory(), self.GetOutputDirectory(), self.GetWorkspaceRoot(), self.env.GetValue("TARGET_DEVICE"), self.GetDTBName())
+        sys.path.insert(0, os.path.join(self.GetWorkspaceRoot(), "scripts"))
+        from pathlib import Path
+        from verify_usb_image import verify
+        root = Path(self.GetWorkspaceRoot())
+        verify(Path(self.GetOutputDirectory()) / (self.env.GetValue("TARGET_DEVICE") + ".img"),
+               "stock", stock_root=root / "Platforms/ShennongPkg/Device/xiaomi-shennong/Binaries/QcomPkg/Drivers")
 ## aloha patch end
         return 0
 

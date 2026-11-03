@@ -199,10 +199,8 @@ INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/VerifiedBoo
 #
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/ShmBridgeDxe/ShmBridgeDxeLA.inf
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/TzDxe/ScmDxeCompat.inf
-!if $(USB_STOCK_CHAIN) == 1
 # Replay uses the extracted stock module, not the previous GPIO-patched variant.
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbConfigDxe/UsbConfigDxe.inf
-!endif
 # ClockDxe: ENABLED, and it works.
 #
 # The note that used to sit here said "DISABLED: it is the last driver printed
@@ -703,26 +701,17 @@ INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbPwrCtrlD
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/TsensDxe/TsensDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/DDRInfoDxe/DDRInfoDxe.inf
 #INF (already provided by the FILE DRIVER block below, same GUID 1C04F529)
-# Qualcomm UsbfnDwc3Dxe removed: StartController is an eight byte stub and the core init
-# hangs in DEPSTARTCFG. The ported reference driver replaces it.
+# Stock USB function driver is the sole controller owner.
 #INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbfnDwc3Dxe/UsbfnDwc3Dxe.inf
-!if $(USB_STOCK_CHAIN) == 1
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbfnDwc3Dxe/UsbfnDwc3Dxe.inf
-!else
-INF AndromedaPkg/Driver/UsbfnDwc3Ref/UsbfnDwc3Ref.inf
-!endif
 # INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciPciEmulationDxe/XhciPciEmulationDxe.inf # b198: direct USB2 controller owner
 # INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/XhciDxe/XhciDxe.inf # b198: direct USB2 controller owner
 # INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbBusDxe/UsbBusDxe.inf # b198: direct USB2 controller owner
 # INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbKbDxe/UsbKbDxe.inf # b198: direct USB2 controller owner
 # INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbMassStorageDxe/UsbMassStorageDxe.inf # b198: direct USB2 controller owner
 # INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbMsdDxe/UsbMsdDxe.inf # b198: direct USB2 controller owner
-!if $(USB_STOCK_CHAIN) == 1
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UsbDeviceDxe/UsbDeviceDxe.inf
 INF AndromedaPkg/Driver/UsbStockReplayDxe/UsbStockReplayDxe.inf
-!else
-INF AndromedaPkg/Driver/UsbDevStartDxe/UsbDevStartDxe.inf
-!endif
 INF AndromedaPkg/Driver/GcdProbeDxe/GcdProbeDxe.inf
 INF AndromedaPkg/Driver/EarlyBdsArchDxe/EarlyBdsArchDxe.inf
 #INF AndromedaPkg/Driver/TouchProbeDxe/TouchProbeDxe.inf   # disabled: reading TLMM resets the device
@@ -735,8 +724,8 @@ INF AndromedaPkg/Driver/EarlyBdsArchDxe/EarlyBdsArchDxe.inf
 #     SECTION PE32 = $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/UCDxe/UCDxe.efi
 #     SECTION UI = "UCDxe"
 # }
-#INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILDxe/PILDxe.inf
-#INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILProxyDxe/PILProxyDxe.inf
+INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILDxe/PILDxe.inf
+INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/PILProxyDxe/PILProxyDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/SPSSDxe/SPSSDxe.inf
 #
 # ScmDxeCompat and TzDxeLA, here and not earlier.
@@ -771,7 +760,9 @@ INF AndromedaPkg/Driver/PcdShimDxe/PcdShimDxe.inf
 # lets the UI come up.
 INF AndromedaPkg/Driver/SynapticsTouchDxe/SynapticsTouchDxe.inf
 INF AndromedaPkg/Driver/ReadOnlyStorageDxe/ReadOnlyStorageDxe.inf
+INF Ext4Pkg/Ext4Dxe/Ext4Dxe.inf
 INF AndromedaPkg/Driver/ProjectInfoCacheDxe/ProjectInfoCacheDxe.inf
+INF AndromedaPkg/Driver/WirelessSurveyDxe/WirelessSurveyDxe.inf
 INF AndromedaPkg/Driver/ScmProbeDxe/ScmProbeDxe.inf
 INF AndromedaPkg/Driver/AdspProbeDxe/AdspProbeDxe.inf
 INF $(PACKAGE_NAME)/Device/$(TARGET_DEVICE)/Binaries/QcomPkg/Drivers/TzDxe/TzDxeLA.inf

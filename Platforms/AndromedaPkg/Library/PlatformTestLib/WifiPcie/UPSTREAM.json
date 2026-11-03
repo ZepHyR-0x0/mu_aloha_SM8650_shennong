@@ -1,0 +1,23 @@
+{
+  "reference": "L:\\Desktop\\ProjectMu\\reference\\unixnu-devices\\UniXNU-OnePlus-Ace5",
+  "commit": "aaa100d19f6fb14e5897a7e496edf7838d4d4e9f",
+  "files": {
+    "WifiPciePolicy.h": "5b7758e4f09139b7638c4973f11b4c4a49509566f0f5427578bbd9c58f874690",
+    "WifiPciePhy.h": "9a03cdd014b085535617214e48a799a1ab4eb94b5df3f4509217b6abe19780f8",
+    "WifiPcieStock.h": "841e81c89d7bf7e10c30e1a0a3e3ca03901cd23c62e79bba39a89387e2b9e72a",
+    "WifiPcieStockConfig.h": "a81f9de1dbf80f9a04199f4c2a00daa35246c809e6b3de2f501096baa225b759",
+    "WifiPcieReport.h": "0214813c1219ca83f5ac59b0b05fcd3ab3a66371b050cee4197ea44184dc8482",
+    "WifiPcieCesta.h": "5f180e262a2934e71eb45c137d5888dd212236597a27f9fa843bf4dec5f87e8f",
+    "WifiPcieBandwidth.h": "cdffb9c083c1ff13404ed4d042274de14e874b88d3628833f493a1db26fa16cb",
+    "WifiClockMeasure.h": "b4234d64b57649b8b842b69cccaae9bd6e989c27cc6fd3683e5bfd2a47817264",
+    "WifiPowerCache.h": "9f39fc86679c7bd5e414786d956503b3997233111d63b8d786d38d899a2b118a",
+    "tests/ios16_wifi_pcie.c": "c3a25749e9adfe25b5dda7806f502785cb9e2fb485c013fa389fa28aecf8c7d3",
+    "tests/ios16_wifi_cesta.c": "4bdc320cfad8bac7b376a2326cbc665925fc7ec0e04aee29fb14563f7d6426b6",
+    "tests/ios16_wifi_bandwidth.c": "dd4c450688c1ed79de939b9ae31cfb5780e19f33c2293eb551fcd5caba75c22f",
+    "tests/ios16_wifi_power_cache.c": "87f2c217f8809f9cf12cbb8b272d06a382f5e3b319d5e91349239ed342c10d94"
+  },
+  "shennong_dt_sha256": "dea980bc1d57d2e3ca740e8d6e86b05c2a469399215024df029a5b9f33f07ba4",
+  "phy_sequence_triplets": 115,
+  "phy_sequence_matches": true,
+  "adapter_upstream_sha256": "93d48e6198bc6f4a63911181d2708e25ca73539dc4a9c546ae92af8b0a59a25b"
+}

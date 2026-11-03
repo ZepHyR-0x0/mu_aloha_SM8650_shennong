@@ -1,0 +1,26 @@
+/* Narrow prefix of Qualcomm EFIClock 1.0.a, verified against Shennong's
+ * linked native table at RVA 0x20108. SPDX-License-Identifier: BSD-2-Clause-Patent */
+#ifndef SHENNONG_WIFI_STOCK_CLOCK_H
+#define SHENNONG_WIFI_STOCK_CLOCK_H
+typedef struct WIFI_CLOCK EFI_CLOCK_PROTOCOL;
+typedef EFI_STATUS (EFIAPI *WIFI_CLOCK_ID)(EFI_CLOCK_PROTOCOL *, CONST CHAR8 *, UINTN *);
+typedef EFI_STATUS (EFIAPI *WIFI_CLOCK_ENABLE)(EFI_CLOCK_PROTOCOL *, UINTN);
+typedef EFI_STATUS (EFIAPI *WIFI_CLOCK_STATE)(EFI_CLOCK_PROTOCOL *, UINTN, BOOLEAN *);
+typedef EFI_STATUS (EFIAPI *WIFI_CLOCK_RATE)(EFI_CLOCK_PROTOCOL *, UINTN, UINT32, UINT32, UINT32 *);
+typedef EFI_STATUS (EFIAPI *WIFI_CLOCK_GET_RATE)(EFI_CLOCK_PROTOCOL *, UINTN, UINT32 *);
+typedef EFI_STATUS (EFIAPI *WIFI_CLOCK_SOURCE)(EFI_CLOCK_PROTOCOL *, UINTN, UINT32, UINT32, UINT32, UINT32, UINT32, UINT32);
+struct WIFI_CLOCK {
+  UINT64 Version;
+  WIFI_CLOCK_ID GetClockID;
+  WIFI_CLOCK_ENABLE EnableClock, DisableClock;
+  WIFI_CLOCK_STATE IsClockEnabled, IsClockOn;
+  WIFI_CLOCK_RATE SetClockFreqHz;
+  WIFI_CLOCK_GET_RATE GetClockFreqHz;
+  VOID *CalcClockFreqHz;
+  WIFI_CLOCK_SOURCE SelectExternalSource;
+  WIFI_CLOCK_ID GetClockPowerDomainID;
+  WIFI_CLOCK_ENABLE EnableClockPowerDomain, DisableClockPowerDomain;
+};
+#define EFI_CLOCK_FREQUENCY_HZ_EXACT 3
+STATIC EFI_GUID gEfiClockProtocolGuid = {0x241afae6,0x885f,0x4f6c,{0xa7,0xea,0xc2,0x8e,0xab,0x79,0xc3,0xe5}};
+#endif

@@ -65,7 +65,7 @@
 ################################################################
 # UEFI Shell Change Start
   FILE APPLICATION=PCD(gPcBdsPkgTokenSpaceGuid.PcdShellFile) {
-    SECTION PE32=$(OUTPUT_DIRECTORY)/$(TARGET)_$(TOOL_CHAIN_TAG)/AARCH64/Shell.efi
+    SECTION PE32=$(OUTPUT_DIRECTORY)/$(TARGET)_$(TOOL_CHAIN_TAG)/AARCH64/ShellPkg/Application/Shell/Shell/OUTPUT/Shell.efi
     SECTION UI= "EdkShell"
   }
 # UEFI Shell Change End

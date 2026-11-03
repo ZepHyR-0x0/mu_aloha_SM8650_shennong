@@ -46,12 +46,6 @@
 
 STATIC
 VOID
-InstallShmBridgeHere (
-  VOID
-  );
-
-STATIC
-VOID
 DumpSfDiag (
   VOID
   );
@@ -252,7 +246,6 @@ EFIAPI
 RamPartitionDxeInitialize(
     IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 {
-  InstallShmBridgeHere ();
   DumpSfDiag ();
 
   EFI_STATUS                       Status = EFI_SUCCESS;
@@ -341,119 +334,7 @@ RamPartitionDxeInitialize(
   return Status;
 }
 
-//
-// Publish the ShmBridge protocol (9C1EB71F-DD6C-4ED5-9F6A-5CC0CA789F16) from here.
-//
-// UFSDxe's RPMB listener does LocateProtocol on it and asserts at RpmbListener.c +160
-// when it fails. Two earlier attempts did not work: a standalone ShmBridgeStubDxe sat
-// in the FV with a TRUE depex and never dispatched, and UfsPreDxe - which does run -
-// turned out not to be reached either on the builds that were flashed. This module is
-// the one whose output appears in every single boot log ("Adding Memory Space"), so it
-// is the safest host for something that has to happen before UFSDxe.
-//
-STATIC CONST EFI_GUID  mShmBridgeProtocolGuid = {
-  0x9C1EB71F, 0xDD6C, 0x4ED5, { 0x9F, 0x6A, 0x5C, 0xC0, 0xCA, 0x78, 0x9F, 0x16 }
-};
-
-typedef VOID *(EFIAPI *SHM_ALLOC) (IN VOID *This, IN UINT64 *Args, IN UINTN Mode);
-typedef VOID  (EFIAPI *SHM_FREE)  (IN VOID *This, IN VOID *Buffer);
-
-typedef struct {
-  UINT64     Version;
-  SHM_ALLOC  Allocate;
-  SHM_FREE   Free;
-  UINT64     Reserved0;
-  UINT64     Reserved1;
-  UINT64     Signature0;
-  UINT64     Signature1;
-} SHM_BRIDGE_PROTOCOL;
-
-STATIC
-VOID *
-EFIAPI
-ShmAlloc (
-  IN VOID    *This,
-  IN UINT64  *Args,
-  IN UINTN    Mode
-  )
-{
-  EFI_STATUS             Status;
-  EFI_PHYSICAL_ADDRESS   Buffer;
-  UINTN                  Size;
-  UINTN                  Pages;
-  CHAR8                  Line[80];
-  UINTN                  Length;
-
-  (VOID)This;
-  (VOID)Mode;
-
-  if (Args == NULL) {
-    return NULL;
-  }
-
-  Size = (UINTN)Args[0];
-  Length = AsciiSPrint (Line, sizeof (Line), "[SHMSTUB] alloc 0x%lx\r\n", (UINT64)Size);
-  SerialPortWrite ((UINT8 *)Line, Length);
-
-  if ((Size == 0) || (Size > 16 * 1024 * 1024)) {
-    return NULL;
-  }
-
-  Pages  = EFI_SIZE_TO_PAGES (Size);
-  Buffer = 0;
-  Status = gBS->AllocatePages (AllocateAnyPages, EfiBootServicesData, Pages, &Buffer);
-  if (EFI_ERROR (Status)) {
-    return NULL;
-  }
-
-  ZeroMem ((VOID *)(UINTN)Buffer, Pages * EFI_PAGE_SIZE);
-  return (VOID *)(UINTN)Buffer;
-}
-
-STATIC
-VOID
-EFIAPI
-ShmFree (
-  IN VOID  *This,
-  IN VOID  *Buffer
-  )
-{
-  (VOID)This;
-  (VOID)Buffer;
-}
-
-STATIC SHM_BRIDGE_PROTOCOL  mShmBridge = {
-  0x0000000000010002ULL, ShmAlloc, ShmFree, 0, 0,
-  0x49EF56D78EC2BD8DULL, 0xF8EBF87817639687ULL
-};
-
-STATIC
-VOID
-InstallShmBridgeHere (
-  VOID
-  )
-{
-  EFI_STATUS  Status;
-  EFI_HANDLE  Handle = NULL;
-  VOID        *Check = NULL;
-  CHAR8       Line[96];
-  UINTN       Length;
-
-  Status = gBS->InstallMultipleProtocolInterfaces (
-                  &Handle,
-                  (EFI_GUID *)&mShmBridgeProtocolGuid,
-                  &mShmBridge,
-                  NULL
-                  );
-  Length = AsciiSPrint (Line, sizeof (Line), "[SHMSTUB] install %r handle 0x%lx\r\n",
-                        Status, (UINT64)(UINTN)Handle);
-  SerialPortWrite ((UINT8 *)Line, Length);
-
-  Status = gBS->LocateProtocol ((EFI_GUID *)&mShmBridgeProtocolGuid, NULL, &Check);
-  Length = AsciiSPrint (Line, sizeof (Line), "[SHMSTUB] self-check %r at 0x%lx\r\n",
-                        Status, (UINT64)(UINTN)Check);
-  SerialPortWrite ((UINT8 *)Line, Length);
-}
+// ShmBridgeDxeLA is the sole producer; plain UEFI allocations are not TZ shared memory.
 
 //
 // PrePi finds the XBL "scheduler interface" and "DTB extension" pointers by
