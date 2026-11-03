@@ -81,8 +81,6 @@ CDC、USB Function 和本地文件系统共用同一块 RAM，不复制盘面。
 
 固件与客户端默认 CDC line coding 为 3,000,000 8N1，baud 本身不限制 USB 吞吐量。默认客户端使用 `put2` 协商 1 MiB 确认窗口，每次 DMA 仍不超过 64 KiB；可用 `--upload-window 65536` 选择旧窗口。旧固件只有明确返回未知命令时才回退 `put`。CRC32 改用固定 nibble 表，末窗保留最多 1023 字节补零、流式 CRC 和断线取消未提交替换。相同候选交替上传 4 MiB，64 KiB 窗口为 0.67–0.68 MiB/s，1 MiB 窗口为 1.78 MiB/s，约 2.6 倍，四次 CRC 一致。 本轮 344.1 MiB WIM 上传 186.2 秒（1.85 MiB/s），CRC 回读通过。 性能对照来自 1fa1536c 候选；发布候选的 USB 模块二进制一致，平台与 Windows 检查在发布候选复测。
 
-固件与客户端默认 CDC line coding 为 3,000,000 8N1，baud 本身不限制 USB 吞吐量。默认客户端使用 `put2` 协商 1 MiB 确认窗口，每次 DMA 仍不超过 64 KiB；可用 `--upload-window 65536` 选择旧窗口。旧固件只有明确返回未知命令时才回退 `put`。CRC32 改用固定 nibble 表，末窗保留最多 1023 字节补零、流式 CRC 和断线取消未提交替换。相同候选交替上传 4 MiB，64 KiB 窗口为 0.67–0.68 MiB/s，1 MiB 窗口为 1.78 MiB/s，约 2.6 倍，四次 CRC 一致。 本轮 344.1 MiB WIM 上传 186.2 秒（1.85 MiB/s），CRC 回读通过。 性能对照来自 1fa1536c 候选；发布候选的 USB 模块二进制一致，平台与 Windows 检查在发布候选复测。
-
 正常停止后使用原厂 Stop/StartEx 流程，仅在 halt 未确认时尝试原厂初始化；停止失败保留 DMA 缓冲和 RAM。同模式 CDC 停止/重启与共享文件 CRC 回读已通过。
 
 切换从排队开始禁止其他切换、RAM 大小修改和释放。TEST 显示 switching 状态；驱动对重入返回 Already Started。回切先等待当前控制/BOT 事务完成，最多 5 秒；成功、拔线、超时和停止失败均完成收尾并释放切换锁。停止失败时保留 DMA 缓冲，后续重连或再次请求可重试。CDC 检测实际线缆下降沿，取消会话，并在 pump 外经过 200 ms 后走原厂 Stop/StartEx；普通总线 reset 不触发这条重建。多次真实 CDC 拔插后自动恢复，含日志接收中断；原文件 CRC 保留与再次切换通过。大文件替换上传中拔线的实机验收尚未捕获。
@@ -131,13 +129,6 @@ python tools/cdc-console.py --port COM20
 
 已使用本地 ADK 28000.1 构建 344.1 MiB ARM64 命令行 PE，LZX，SAN OfflineAll、关闭自动挂载。本轮完整目录上传、WIM CRC 和四个启动文件列表通过；执行启动后用户观察到鼠标保留、GUI 背景黑屏，随后重启，主机枚举为 Android ADB。PE 启动失败，具体重启原因未确定。 重启后读回171750字节旧快照，ReadyToBoot与watchdog关闭可见，最后保存点为efi-shell-start，尚无EBS/内核错误记录。
 
-微软的 [WinPE USB 制作说明](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive?view=windows-11) 使用 FAT32；当前 WIM 小于 4 GiB，不需要 NTFS。继续核对 [UEFI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/uefi-requirements-that-apply-to-all-windows-platforms) 与 [ACPI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/acpi-system-description-tables)。同 SoC 的 [giulia ACPI 存档](https://github.com/DianKuang0120/giulia-acpi-archive) 和 [RedMagic 9 WoA 记录](https://github.com/0Re0-8192/rm9-windows-arm64) 用于对照 ACTLR、GIC/GTDT、看门狗和 MHI/QMI；这些设备的成功记录不代表 Shennong 已支持 Windows。
-
-微软的 [WinPE USB 制作说明](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive?view=windows-11) 使用 FAT32；当前 WIM 小于 4 GiB，不需要 NTFS。继续核对 [UEFI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/uefi-requirements-that-apply-to-all-windows-platforms) 与 [ACPI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/acpi-system-description-tables)。同 SoC 的 [giulia ACPI 存档](https://github.com/DianKuang0120/giulia-acpi-archive) 和 [RedMagic 9 WoA 记录](https://github.com/0Re0-8192/rm9-windows-arm64) 用于对照 ACTLR、GIC/GTDT、看门狗和 MHI/QMI；这些设备的成功记录不代表 Shennong 已支持 Windows。
-
-微软的 [WinPE USB 制作说明](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive?view=windows-11) 使用 FAT32；当前 WIM 小于 4 GiB，不需要 NTFS。继续核对 [UEFI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/uefi-requirements-that-apply-to-all-windows-platforms) 与 [ACPI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/acpi-system-description-tables)。同 SoC 的 [giulia ACPI 存档](https://github.com/DianKuang0120/giulia-acpi-archive) 和 [RedMagic 9 WoA 记录](https://github.com/0Re0-8192/rm9-windows-arm64) 用于对照 ACTLR、GIC/GTDT、看门狗和 MHI/QMI；这些设备的成功记录不代表 Shennong 已支持 Windows。
-
-微软的 [WinPE USB 制作说明](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive?view=windows-11) 使用 FAT32；当前 WIM 小于 4 GiB，不需要 NTFS。继续核对 [UEFI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/uefi-requirements-that-apply-to-all-windows-platforms) 与 [ACPI 要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/bringup/acpi-system-description-tables)。同 SoC 的 [giulia ACPI 存档](https://github.com/DianKuang0120/giulia-acpi-archive) 和 [RedMagic 9 WoA 记录](https://github.com/0Re0-8192/rm9-windows-arm64) 用于对照 ACTLR、GIC/GTDT、看门狗和 MHI/QMI；这些设备的成功记录不代表 Shennong 已支持 Windows。
 
 ## 一键编译
 
